@@ -123,12 +123,18 @@ Regla: no se mergea ningún ticket de datos sin evidencia de estos 3 pasos.
 - Tipo: infra
 - Prioridad: high
 - Estimación: 2
-- Estado: todo
+- Estado: done
 - Dependencias: NB-ARC-001
 - Criterios:
   - Formato estándar de error API.
   - Mapeo claro de errores de dominio a HTTP.
   - Stacktrace solo en desarrollo.
+- Implementación:
+  - `GlobalExceptionFilter` (`APP_FILTER`) con cuerpo `{ error: { code, message, details }, meta: { requestId, timestamp } }` según `backend-nest-api-contracts.md`.
+  - `DomainException` para códigos de negocio estables + HTTP status explícito.
+  - `HttpException` / arrays de validación → `VALIDATION_ERROR` + `details.fields`.
+  - Postgres `23505` (unique) → `409` + `DUPLICATE_RESOURCE`.
+  - Errores no HTTP: mensaje genérico en prod; en `development`/`dev` incluye mensaje y `details.stack`.
 
 ## NB-ARC-005 — Swagger/OpenAPI inicial
 - Tipo: docs
