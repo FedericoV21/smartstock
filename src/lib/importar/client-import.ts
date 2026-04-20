@@ -48,7 +48,7 @@ export type ImportExecutionResult = {
   detalle_errores: { fila: number; campo: string; error: string; valor_original?: string }[];
 };
 
-const DEFAULT_CHUNK_SIZE = 250;
+const DEFAULT_CHUNK_SIZE = 500;
 
 function chunkArray<T>(items: T[], chunkSize: number): T[][] {
   if (items.length === 0) return [];

@@ -4,6 +4,12 @@ import { calcularPrecioVenta } from '@/lib/productos/calcular-precio-venta';
 import type { Database } from '@/types/database';
 
 type UnidadMedida = Database['public']['Enums']['unidad_medida'];
+type ImportRowResult =
+  | { status: 'created' }
+  | { status: 'updated' }
+  | { status: 'error'; error: EjecutarImportacionResultado['detalle_errores'][number] };
+
+const IMPORT_ROW_CONCURRENCY = 12;
 
 const UNIDADES_VALIDAS: UnidadMedida[] = [
   'unidad',
@@ -19,6 +25,34 @@ const UNIDADES_VALIDAS: UnidadMedida[] = [
 function mapUnidad(s: string | null | undefined): UnidadMedida {
   const v = (s ?? 'unidad').toLowerCase().trim();
   return UNIDADES_VALIDAS.includes(v as UnidadMedida) ? (v as UnidadMedida) : 'unidad';
+}
+
+function normalizarCategoriaNombre(nombre: string): string {
+  return nombre.trim().toLowerCase();
+}
+
+async function mapConConcurrency<T, R>(
+  items: T[],
+  concurrency: number,
+  worker: (item: T, index: number) => Promise<R>,
+): Promise<R[]> {
+  if (items.length === 0) return [];
+
+  const limit = Math.max(1, Math.min(concurrency, items.length));
+  const results = new Array<R>(items.length);
+  let nextIndex = 0;
+
+  await Promise.all(
+    Array.from({ length: limit }, async () => {
+      while (true) {
+        const currentIndex = nextIndex++;
+        if (currentIndex >= items.length) return;
+        results[currentIndex] = await worker(items[currentIndex]!, currentIndex);
+      }
+    }),
+  );
+
+  return results;
 }
 
 export interface FilaImportacion {
@@ -81,9 +115,13 @@ export async function ejecutarImportacionFilas(
   const { data: categorias } = await supabase
     .from('categoria')
     .select('id, nombre')
+    .eq('tenant_id', tenantId)
     .eq('activa', true);
 
-  const categoriasMap = new Map((categorias ?? []).map((c) => [c.nombre.toLowerCase(), c.id]));
+  const categoriasMap = new Map(
+    (categorias ?? []).map((c) => [normalizarCategoriaNombre(c.nombre), c.id]),
+  );
+  const categoriasPendientes = new Map<string, Promise<string | null>>();
 
   const { data: tenantRow } = await supabase
     .from('tenant')
@@ -120,123 +158,157 @@ export async function ejecutarImportacionFilas(
     }
   }
 
-  for (let i = 0; i < filas.length; i++) {
-    const fila = filas[i];
+  async function resolverCategoriaId(nombreCategoria: string | null | undefined): Promise<string | null> {
+    const categoriaNombre = nombreCategoria?.trim();
+    if (!categoriaNombre) return null;
 
-    try {
-      if (!fila.nombre || fila.nombre.trim() === '') {
-        throw new Error('Nombre vacío');
-      }
+    const categoriaKey = normalizarCategoriaNombre(categoriaNombre);
+    const existente = categoriasMap.get(categoriaKey);
+    if (existente) return existente;
 
-      let categoriaId: string | null = null;
-      if (fila.categoria) {
-        const catNombre = fila.categoria.toLowerCase();
-        if (categoriasMap.has(catNombre)) {
-          categoriaId = categoriasMap.get(catNombre)!;
-        } else {
-          const { data: nuevaCat, error: nuevaCatError } = await supabase
+    let pendiente = categoriasPendientes.get(categoriaKey);
+    if (!pendiente) {
+      pendiente = (async () => {
+        const { data: nuevaCat, error: nuevaCatError } = await supabase
+          .from('categoria')
+          .insert({ tenant_id: tenantId, nombre: categoriaNombre })
+          .select('id, nombre')
+          .single();
+
+        if (nuevaCatError) {
+          const { data: categoriaExistente, error: categoriaExistenteError } = await supabase
             .from('categoria')
-            .insert({ tenant_id: tenantId, nombre: fila.categoria })
-            .select()
-            .single();
-          if (nuevaCatError) {
+            .select('id, nombre')
+            .eq('tenant_id', tenantId)
+            .eq('activa', true)
+            .ilike('nombre', categoriaNombre)
+            .maybeSingle();
+
+          if (categoriaExistenteError || !categoriaExistente) {
             throw new Error(nuevaCatError.message);
           }
-          if (nuevaCat) {
-            categoriaId = nuevaCat.id;
-            categoriasMap.set(catNombre, nuevaCat.id);
+
+          categoriasMap.set(categoriaKey, categoriaExistente.id);
+          return categoriaExistente.id;
+        }
+
+        const nuevaCategoriaId = nuevaCat?.id ?? null;
+        if (nuevaCategoriaId) {
+          categoriasMap.set(categoriaKey, nuevaCategoriaId);
+        }
+        return nuevaCategoriaId;
+      })().finally(() => {
+        categoriasPendientes.delete(categoriaKey);
+      });
+      categoriasPendientes.set(categoriaKey, pendiente);
+    }
+
+    return pendiente;
+  }
+
+  const resultados = await mapConConcurrency(
+    filas,
+    IMPORT_ROW_CONCURRENCY,
+    async (fila, i): Promise<ImportRowResult> => {
+      try {
+        if (!fila.nombre || fila.nombre.trim() === '') {
+          throw new Error('Nombre vacío');
+        }
+
+        const categoriaId = await resolverCategoriaId(fila.categoria);
+        const codigo = fila.codigo?.trim() || null;
+        const productoExistente = codigo ? productosPorCodigo.get(codigo) ?? null : null;
+
+        if (productoExistente) {
+          const updates: Database['public']['Tables']['producto']['Update'] = {
+            nombre: fila.nombre,
+          };
+          if (fila.precio_costo != null) updates.precio_costo = fila.precio_costo;
+          if (fila.precio_venta != null) updates.precio_venta = fila.precio_venta;
+          if (fila.stock_minimo != null) updates.stock_minimo = fila.stock_minimo;
+          if (fila.unidad) updates.unidad = mapUnidad(fila.unidad);
+          if (fila.fecha_vencimiento) updates.fecha_vencimiento = fila.fecha_vencimiento;
+          if (fila.codigo_barras) updates.codigo_barras = fila.codigo_barras;
+          if (fila.rubro != null) updates.rubro = fila.rubro || null;
+          if (fila.subrubro != null) updates.subrubro = fila.subrubro || null;
+          if (fila.iva_porcentaje != null) updates.iva_porcentaje = fila.iva_porcentaje;
+          if (fila.porcentaje_ganancia != null) updates.porcentaje_ganancia = fila.porcentaje_ganancia;
+          if (fila.ubicacion != null) updates.ubicacion = fila.ubicacion || null;
+          if (fila.moneda) updates.moneda = fila.moneda;
+          if (categoriaId) updates.categoria_id = categoriaId;
+          if (proveedor_id) updates.proveedor_id = proveedor_id;
+
+          if (
+            fila.precio_venta == null &&
+            fila.porcentaje_ganancia != null &&
+            fila.porcentaje_ganancia > 0
+          ) {
+            const costo = fila.precio_costo ?? productoExistente.precio_costo;
+            if (costo > 0) {
+              updates.precio_venta = calcularPrecioVenta(
+                costo,
+                fila.porcentaje_ganancia,
+                fila.iva_porcentaje,
+                ivaDefault,
+              );
+            }
           }
-        }
-      }
 
-      const codigo = fila.codigo?.trim() || null;
-      const productoExistente = codigo ? productosPorCodigo.get(codigo) ?? null : null;
-
-      if (productoExistente) {
-        const updates: Database['public']['Tables']['producto']['Update'] = {
-          nombre: fila.nombre,
-        };
-        if (fila.precio_costo != null) updates.precio_costo = fila.precio_costo;
-        if (fila.precio_venta != null) updates.precio_venta = fila.precio_venta;
-        if (fila.stock_minimo != null) updates.stock_minimo = fila.stock_minimo;
-        if (fila.unidad) updates.unidad = mapUnidad(fila.unidad);
-        if (fila.fecha_vencimiento) updates.fecha_vencimiento = fila.fecha_vencimiento;
-        if (fila.codigo_barras) updates.codigo_barras = fila.codigo_barras;
-        if (fila.rubro != null) updates.rubro = fila.rubro || null;
-        if (fila.subrubro != null) updates.subrubro = fila.subrubro || null;
-        if (fila.iva_porcentaje != null) updates.iva_porcentaje = fila.iva_porcentaje;
-        if (fila.porcentaje_ganancia != null) updates.porcentaje_ganancia = fila.porcentaje_ganancia;
-        if (fila.ubicacion != null) updates.ubicacion = fila.ubicacion || null;
-        if (fila.moneda) updates.moneda = fila.moneda;
-        if (categoriaId) updates.categoria_id = categoriaId;
-        if (proveedor_id) updates.proveedor_id = proveedor_id;
-
-        if (fila.precio_venta == null && fila.porcentaje_ganancia != null && fila.porcentaje_ganancia > 0) {
-          const costo = fila.precio_costo ?? productoExistente.precio_costo;
-          if (costo > 0) {
-            updates.precio_venta = calcularPrecioVenta(
-              costo,
-              fila.porcentaje_ganancia,
-              fila.iva_porcentaje,
-              ivaDefault,
-            );
+          const { error: updateError } = await supabase
+            .from('producto')
+            .update(updates)
+            .eq('id', productoExistente.id)
+            .eq('tenant_id', tenantId);
+          if (updateError) {
+            throw new Error(updateError.message);
           }
-        }
 
-        const { error: updateError } = await supabase
-          .from('producto')
-          .update(updates)
-          .eq('id', productoExistente.id)
-          .eq('tenant_id', tenantId);
-        if (updateError) {
-          throw new Error(updateError.message);
-        }
+          const costoAnterior = productoExistente.precio_costo;
+          const ventaAnterior = productoExistente.precio_venta;
+          const costoNuevo = fila.precio_costo ?? costoAnterior;
+          const ventaNuevo = updates.precio_venta ?? fila.precio_venta ?? ventaAnterior;
 
-        const costoAnterior = productoExistente.precio_costo;
-        const ventaAnterior = productoExistente.precio_venta;
-        const costoNuevo = fila.precio_costo ?? costoAnterior;
-        const ventaNuevo = updates.precio_venta ?? fila.precio_venta ?? ventaAnterior;
+          if (costoAnterior !== costoNuevo || ventaAnterior !== ventaNuevo) {
+            const margenAnt =
+              costoAnterior > 0 ? ((ventaAnterior - costoAnterior) / costoAnterior) * 100 : 0;
+            const margenNuevo =
+              costoNuevo > 0 ? ((ventaNuevo - costoNuevo) / costoNuevo) * 100 : 0;
 
-        if (costoAnterior !== costoNuevo || ventaAnterior !== ventaNuevo) {
-          const margenAnt =
-            costoAnterior > 0 ? ((ventaAnterior - costoAnterior) / costoAnterior) * 100 : 0;
-          const margenNuevo = costoNuevo > 0 ? ((ventaNuevo - costoNuevo) / costoNuevo) * 100 : 0;
-
-          const { error: historialError } = await supabase.from('precio_historial').insert({
-            tenant_id: tenantId,
-            producto_id: productoExistente.id,
-            precio_costo_anterior: costoAnterior,
-            precio_costo_nuevo: costoNuevo,
-            precio_venta_anterior: ventaAnterior,
-            precio_venta_nuevo: ventaNuevo,
-            margen_anterior: margenAnt,
-            margen_nuevo: margenNuevo,
-            origen,
-          });
-          if (historialError) {
-            throw new Error(historialError.message);
+            const { error: historialError } = await supabase.from('precio_historial').insert({
+              tenant_id: tenantId,
+              producto_id: productoExistente.id,
+              precio_costo_anterior: costoAnterior,
+              precio_costo_nuevo: costoNuevo,
+              precio_venta_anterior: ventaAnterior,
+              precio_venta_nuevo: ventaNuevo,
+              margen_anterior: margenAnt,
+              margen_nuevo: margenNuevo,
+              origen,
+            });
+            if (historialError) {
+              throw new Error(historialError.message);
+            }
           }
-        }
 
-        if (fila.stock_actual != null && fila.stock_actual !== productoExistente.stock_actual) {
-          const { error: movimientoError } = await supabase.rpc('registrar_movimiento', {
-            p_tenant_id: tenantId,
-            p_producto_id: productoExistente.id,
-            p_tipo: 'ajuste',
-            p_cantidad: fila.stock_actual,
-            p_motivo: `Ajuste por importación: ${archivo_nombre}`,
-            p_referencia_tipo: 'importacion',
-            p_usuario_id: ctx.userId,
-          });
-          if (movimientoError) {
-            throw new Error(movimientoError.message);
+          if (fila.stock_actual != null && fila.stock_actual !== productoExistente.stock_actual) {
+            const { error: movimientoError } = await supabase.rpc('registrar_movimiento', {
+              p_tenant_id: tenantId,
+              p_producto_id: productoExistente.id,
+              p_tipo: 'ajuste',
+              p_cantidad: fila.stock_actual,
+              p_motivo: `Ajuste por importación: ${archivo_nombre}`,
+              p_referencia_tipo: 'importacion',
+              p_usuario_id: ctx.userId,
+            });
+            if (movimientoError) {
+              throw new Error(movimientoError.message);
+            }
           }
+
+          return { status: 'updated' };
         }
 
-        productosActualizados++;
-      } else {
         const codigoInsert = codigo || `AUTO-${Date.now()}-${i}`;
-
         const insertCosto = fila.precio_costo ?? 0;
         let insertVenta = fila.precio_venta ?? 0;
         if (
@@ -309,17 +381,33 @@ export async function ejecutarImportacionFilas(
             stock_actual: fila.stock_actual ?? 0,
           });
         }
-        productosCreados++;
+
+        return { status: 'created' };
+      } catch (err) {
+        return {
+          status: 'error',
+          error: {
+            fila: i + 1,
+            campo: 'general',
+            valor_original: resumirFilaParaError(fila),
+            error: (err as Error).message,
+          },
+        };
       }
-    } catch (err) {
-      filasConError++;
-      detalleErrores.push({
-        fila: i + 1,
-        campo: 'general',
-        valor_original: resumirFilaParaError(fila),
-        error: (err as Error).message,
-      });
+    },
+  );
+
+  for (const resultado of resultados) {
+    if (resultado.status === 'created') {
+      productosCreados++;
+      continue;
     }
+    if (resultado.status === 'updated') {
+      productosActualizados++;
+      continue;
+    }
+    filasConError++;
+    detalleErrores.push(resultado.error);
   }
 
   await supabase.from('importacion_log').insert({
