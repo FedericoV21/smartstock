@@ -1,5 +1,5 @@
 /**
- * Tipos del esquema `public` de Supabase (SmartStock).
+ * Tipos del esquema `public` de Supabase (Nexus).
  * Regenerar con `npm run gen:types` cuando tengas `SUPABASE_ACCESS_TOKEN` configurado.
  */
 export type Json =

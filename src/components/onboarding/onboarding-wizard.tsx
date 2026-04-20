@@ -80,7 +80,7 @@ export function OnboardingWizard() {
     >
       <div className="max-h-[90vh] w-full max-w-lg overflow-y-auto rounded-xl border bg-card p-6 shadow-lg">
         <h2 id="onboarding-title" className="text-lg font-semibold">
-          Primeros pasos en SmartStock
+          Primeros pasos en Nexus
         </h2>
         <p className="mt-2 text-sm text-muted-foreground">
           Paso {step + 1} de 3 · Podés saltear cualquier paso o cerrar el asistente cuando quieras.

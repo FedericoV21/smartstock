@@ -10,7 +10,7 @@ const inter = Inter({
 });
 
 export const metadata: Metadata = {
-  title: "SmartStock",
+  title: "Nexus",
   description: "Sistema de gestión de stock, facturación e importación para comercios argentinos",
 };
 

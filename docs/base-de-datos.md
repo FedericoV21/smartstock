@@ -4,7 +4,7 @@ version: v0.1
 ultima_actualizacion: 2026-04-13
 ---
 
-# SmartStock — Base de datos
+# Nexus — Base de datos
 
 ## Diagrama Entidad-Relación (ERD)
 
@@ -312,7 +312,7 @@ erDiagram
 ## Descripción de cada tabla
 
 ### `tenant`
-**Propósito:** Raíz del multi-tenancy. Cada registro representa un negocio/cliente de SmartStock.
+**Propósito:** Raíz del multi-tenancy. Cada registro representa un negocio/cliente de Nexus.
 
 | Campo clave | Descripción |
 |---|---|

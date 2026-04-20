@@ -4,11 +4,11 @@ version: v0.1
 ultima_actualizacion: 2026-04-13
 ---
 
-# SmartStock — Multi-tenancy
+# Nexus — Multi-tenancy
 
 ## Modelo: Shared Database con `tenant_id`
 
-SmartStock usa un modelo de multi-tenancy **shared database, shared schema**: todos los tenants comparten la misma base de datos PostgreSQL y las mismas tablas. Cada fila tiene una columna `tenant_id` (UUID, FK a `tenant`) que identifica a qué negocio pertenece.
+Nexus usa un modelo de multi-tenancy **shared database, shared schema**: todos los tenants comparten la misma base de datos PostgreSQL y las mismas tablas. Cada fila tiene una columna `tenant_id` (UUID, FK a `tenant`) que identifica a qué negocio pertenece.
 
 El aislamiento de datos se garantiza con **Row Level Security (RLS)** de PostgreSQL: las policies verifican que el `tenant_id` de cada fila coincida con el `tenant_id` del JWT del usuario autenticado. Esto ocurre a nivel de base de datos, independientemente de la aplicación.
 

@@ -4,11 +4,11 @@ version: v0.1
 ultima_actualizacion: 2026-04-15
 ---
 
-# SmartStock — Analizador de Rentabilidad
+# Nexus — Analizador de Rentabilidad
 
 ## Visión general
 
-El módulo `analizador_rentabilidad` es la capa de inteligencia comercial de SmartStock. Extiende el importador y la IA de precios para que el usuario no solo cargue una lista, sino que pueda **entender su impacto antes de aplicarla**.
+El módulo `analizador_rentabilidad` es la capa de inteligencia comercial de Nexus. Extiende el importador y la IA de precios para que el usuario no solo cargue una lista, sino que pueda **entender su impacto antes de aplicarla**.
 
 El flujo central es:
 

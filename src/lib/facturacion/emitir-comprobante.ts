@@ -157,7 +157,7 @@ async function liberarNumeroConflictuanteErrorArca(
   const numeroArchivado = await obtenerNumeroArchivado(supabase, tenantId, tipo);
   const notaArchivo = [
     conflicto.notas?.trim(),
-    `[SmartStock] Registro archivado localmente como ${numeroArchivado} para liberar la numeración fiscal ${numero} tras un rechazo de ARCA.`,
+    `[Nexus] Registro archivado localmente como ${numeroArchivado} para liberar la numeración fiscal ${numero} tras un rechazo de ARCA.`,
   ]
     .filter(Boolean)
     .join('\n\n');

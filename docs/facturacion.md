@@ -4,7 +4,7 @@ version: v0.1
 ultima_actualizacion: 2026-04-13
 ---
 
-# SmartStock — Facturación simple (PDF sin ARCA)
+# Nexus — Facturación simple (PDF sin ARCA)
 
 ## Visión general
 

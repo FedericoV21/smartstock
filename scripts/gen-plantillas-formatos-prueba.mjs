@@ -36,7 +36,7 @@ const p1 = ['MAR-101', 'Martillo carpintero 16 oz', 2500, 4200, 18, 5, 'Ferreter
 const p2 = ['CLA-202', 'Clavo zincado 2" bolsa x100', 890, 1500, 200, 40, 'Ferretería', 'kg', '2027-01-15'];
 const p3 = ['HERR-003', 'Cinta métrica 5 m', 3200, 5200, 12, 3, 'Herramientas', 'unidad', '2026-06-30'];
 
-// Estándar SmartStock (referencia)
+// Estándar Nexus (referencia)
 writeCsv('01_estandar_misma_plantilla.csv', [
   ['Código', 'Nombre', 'Precio Costo', 'Precio Venta', 'Stock', 'Stock Mínimo', 'Categoría', 'Unidad', 'Vencimiento'],
   p1,

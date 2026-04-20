@@ -118,7 +118,7 @@ export function NegocioSetupWizard() {
         <p className="text-xs font-medium uppercase tracking-wide text-muted-foreground">
           Configuración inicial
         </p>
-        <h1 className="mt-1 text-2xl font-semibold tracking-tight">Tu negocio en SmartStock</h1>
+        <h1 className="mt-1 text-2xl font-semibold tracking-tight">Tu negocio en Nexus</h1>
         <p className="mt-2 text-sm text-muted-foreground">
           Completá estos datos para usar el panel. Podés editarlos después en Mi negocio.
         </p>

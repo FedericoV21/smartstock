@@ -4,11 +4,11 @@ version: v0.1
 ultima_actualizacion: 2026-04-13
 ---
 
-# SmartStock — Integración ARCA (ex-AFIP)
+# Nexus — Integración ARCA (ex-AFIP)
 
-## Qué es ARCA y qué servicios usa SmartStock
+## Qué es ARCA y qué servicios usa Nexus
 
-ARCA (Agencia de Recaudación y Control Aduanero, ex-AFIP) es el organismo fiscal argentino. SmartStock integra dos de sus webservices SOAP para emitir facturas electrónicas con CAE (Código de Autorización Electrónico):
+ARCA (Agencia de Recaudación y Control Aduanero, ex-AFIP) es el organismo fiscal argentino. Nexus integra dos de sus webservices SOAP para emitir facturas electrónicas con CAE (Código de Autorización Electrónico):
 
 | Servicio | Propósito | Protocolo |
 |---|---|---|
@@ -51,7 +51,7 @@ export function getEndpoints(ambiente: 'homologacion' | 'produccion') {
 
 ```mermaid
 sequenceDiagram
-    participant App as SmartStock
+    participant App as Nexus
     participant Crypto as Firma XML
     participant WSAA as WSAA (ARCA)
     participant DB as arca_config
@@ -299,7 +299,7 @@ function desencriptarCampo(valorEncriptado: string): string {
 
 ```mermaid
 sequenceDiagram
-    participant App as SmartStock
+    participant App as Nexus
     participant WSAA as WSAA
     participant WSFE as WSFE (ARCA)
     participant DB as PostgreSQL
@@ -682,7 +682,7 @@ export async function consultarUltimoComprobante(
 
 ## Tipos de comprobantes soportados
 
-| Tipo SmartStock | Código ARCA | Letra | Emisor | Receptor |
+| Tipo Nexus | Código ARCA | Letra | Emisor | Receptor |
 |---|---|---|---|---|
 | `factura_a` | 1 | A | Responsable Inscripto | Responsable Inscripto |
 | `factura_b` | 6 | B | Responsable Inscripto | Consumidor Final / Monotributista / Exento |

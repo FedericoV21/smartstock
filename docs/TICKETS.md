@@ -4,7 +4,7 @@ version: v6.0
 ultima_actualizacion: 2026-04-16
 ---
 
-# SmartStock — Backlog de tickets
+# Nexus — Backlog de tickets
 
 ---
 
@@ -371,7 +371,7 @@ ultima_actualizacion: 2026-04-16
 **Descripción:** Crear la página principal del dashboard con un mensaje de bienvenida y placeholders para las cards de métricas que se implementarán en v2.0.
 
 **Criterios de aceptación:**
-- [x] `(dashboard)/page.tsx` muestra "Bienvenido a SmartStock" con el nombre del tenant
+- [x] `(dashboard)/page.tsx` muestra "Bienvenido a Nexus" con el nombre del tenant
 - [x] Placeholder para cards de métricas (stock bajo, vencimientos, ventas del día)
 - [x] El usuario logueado ve esta página al entrar a `/`
 
@@ -1695,7 +1695,7 @@ ultima_actualizacion: 2026-04-16
 **Criterios de aceptación:**
 - [ ] Función `solicitarCAE(supabase, config, solicitud)` envía comprobante a ARCA
 - [ ] XML builder con todos los campos: tipo cbte, pto venta, concepto, doc receptor, importes, alícuotas IVA
-- [ ] Mapeo de tipos SmartStock a códigos ARCA (factura_a=1, factura_b=6, factura_c=11, etc.)
+- [ ] Mapeo de tipos Nexus a códigos ARCA (factura_a=1, factura_b=6, factura_c=11, etc.)
 - [ ] Mapeo de documento receptor (CUIT=80, DNI=96, sin_identificar=99)
 - [ ] Parseo de respuesta: CAE, CAEFchVto, Resultado, Errores, Observaciones
 - [ ] Timeout de 30 segundos en el request

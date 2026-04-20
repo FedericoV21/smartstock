@@ -4,7 +4,7 @@ version: v0.1
 ultima_actualizacion: 2026-04-13
 ---
 
-# SmartStock — Módulo de Stock
+# Nexus — Módulo de Stock
 
 ## Visión general
 

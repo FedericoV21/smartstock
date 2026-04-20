@@ -210,7 +210,7 @@ function buildTicketHTML(data: TicketData, ancho: string, fontSize: string): str
   ${data.caeVencimiento ? `<div>Vto. CAE: ${escapeHtml(data.caeVencimiento)}</div>` : ''}
   <div class="sep"></div>
   <div class="center" style="margin-top:4px">¡Gracias por su compra!</div>
-  <div class="center" style="font-size:0.85em;margin-top:2px">SmartStock POS</div>
+  <div class="center" style="font-size:0.85em;margin-top:2px">Nexus POS</div>
 </body>
 </html>`;
 }

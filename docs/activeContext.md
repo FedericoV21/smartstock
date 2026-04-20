@@ -4,7 +4,7 @@ version: v6.0
 ultima_actualizacion: 2026-04-16
 ---
 
-# SmartStock — Contexto activo
+# Nexus — Contexto activo
 
 ## Qué estamos construyendo ahora
 

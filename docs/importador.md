@@ -4,7 +4,7 @@ version: v0.1
 ultima_actualizacion: 2026-04-20
 ---
 
-# SmartStock — Importador Excel/CSV
+# Nexus — Importador Excel/CSV
 
 ## Visión general
 

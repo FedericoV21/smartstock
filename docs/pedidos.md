@@ -4,7 +4,7 @@ version: v0.1
 ultima_actualizacion: 2026-04-13
 ---
 
-# SmartStock — Módulo de Pedidos y Presupuestos
+# Nexus — Módulo de Pedidos y Presupuestos
 
 ## Visión general
 

@@ -4,11 +4,11 @@ version: v0.1
 ultima_actualizacion: 2026-04-13
 ---
 
-# SmartStock — Sistema de módulos y feature flags
+# Nexus — Sistema de módulos y feature flags
 
 ## Visión general
 
-SmartStock controla el acceso a funcionalidad a través de la tabla `modulo_config`: un registro por tenant con campos booleanos que indican qué módulos están habilitados. Esto permite que un mismo deploy sirva a todos los clientes, mostrando/ocultando secciones de la UI y permitiendo/bloqueando llamadas a la API según el plan de suscripción.
+Nexus controla el acceso a funcionalidad a través de la tabla `modulo_config`: un registro por tenant con campos booleanos que indican qué módulos están habilitados. Esto permite que un mismo deploy sirva a todos los clientes, mostrando/ocultando secciones de la UI y permitiendo/bloqueando llamadas a la API según el plan de suscripción.
 
 ```mermaid
 graph LR

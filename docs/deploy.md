@@ -4,7 +4,7 @@ version: v0.1
 ultima_actualizacion: 2026-04-13
 ---
 
-# SmartStock — Deploy y operaciones
+# Nexus — Deploy y operaciones
 
 ## Estrategia de deploy
 
@@ -292,14 +292,14 @@ Antes de activar ARCA en producción, todo el flujo se testea contra el ambiente
 openssl genrsa -out smartstock_homo.key 2048
 
 # Generar CSR
-openssl req -new -key smartstock_homo.key -out smartstock_homo.csr -subj "/C=AR/O=SmartStock/CN=smartstock/serialNumber=CUIT XXXXXXXXXXX"
+openssl req -new -key smartstock_homo.key -out smartstock_homo.csr -subj "/C=AR/O=Nexus/CN=smartstock/serialNumber=CUIT XXXXXXXXXXX"
 ```
 
 3. Subir el CSR al portal de ARCA.
 4. Descargar el certificado firmado (.crt/.pem).
 5. Asociar el certificado al servicio `wsfe` en el portal de ARCA.
 
-### Configurar en SmartStock
+### Configurar en Nexus
 
 1. Login como admin del tenant de prueba.
 2. Ir a `/configuracion/arca`.
@@ -323,7 +323,7 @@ openssl req -new -key smartstock_homo.key -out smartstock_homo.csr -subj "/C=AR/
 
 ## Rotación de certificados ARCA cuando vencen
 
-Los certificados de ARCA tienen un vencimiento (generalmente 2 años). SmartStock debe gestionar la renovación:
+Los certificados de ARCA tienen un vencimiento (generalmente 2 años). Nexus debe gestionar la renovación:
 
 ### Alerta de vencimiento
 

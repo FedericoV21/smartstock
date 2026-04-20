@@ -4,7 +4,7 @@ version: v0.1
 ultima_actualizacion: 2026-04-13
 ---
 
-# SmartStock — Autenticación
+# Nexus — Autenticación
 
 ## Flujo de registro (nuevo tenant + primer usuario admin)
 

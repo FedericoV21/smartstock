@@ -1,8 +1,8 @@
-# SmartStock — Especificación completa del proyecto
+# Nexus — Especificación completa del proyecto
 
 ## 1. Visión general
 
-SmartStock es un sistema de gestión de stock inteligente, modular y adaptable a distintos tipos de negocio. Desde un almacén de barrio hasta una fábrica o distribuidora, cada cliente activa solo los módulos que necesita.
+Nexus es un sistema de gestión de stock inteligente, modular y adaptable a distintos tipos de negocio. Desde un almacén de barrio hasta una fábrica o distribuidora, cada cliente activa solo los módulos que necesita.
 
 **Modelo de negocio:** suscripción mensual con dos planes (Base y Completo) que controlan qué módulos tiene habilitados cada cliente. Los módulos se activan/desactivan por configuración en base de datos, no por versiones distintas del código. Un mismo deploy sirve a todos los clientes.
 
@@ -172,7 +172,7 @@ CREATE TYPE origen_precio AS ENUM (
 
 ### 6.2 Tabla `tenant`
 
-Representa un negocio/cliente de SmartStock. Es la raíz de todo el multi-tenancy.
+Representa un negocio/cliente de Nexus. Es la raíz de todo el multi-tenancy.
 
 ```sql
 CREATE TABLE tenant (

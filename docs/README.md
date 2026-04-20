@@ -4,11 +4,11 @@ version: v0.1
 ultima_actualizacion: 2026-04-13
 ---
 
-# SmartStock — Documentación del proyecto
+# Nexus — Documentación del proyecto
 
-## Qué es SmartStock
+## Qué es Nexus
 
-SmartStock es un sistema de gestión de stock inteligente, modular y multi-tenant, diseñado para comercios argentinos de todos los tamaños. Desde un kiosco de barrio hasta una distribuidora o fábrica, cada cliente (tenant) activa únicamente los módulos que su negocio necesita, pagando una suscripción mensual ajustada a su perfil.
+Nexus es un sistema de gestión de stock inteligente, modular y multi-tenant, diseñado para comercios argentinos de todos los tamaños. Desde un kiosco de barrio hasta una distribuidora o fábrica, cada cliente (tenant) activa únicamente los módulos que su negocio necesita, pagando una suscripción mensual ajustada a su perfil.
 
 El modelo de negocio se basa en dos planes de suscripción — Base y Completo — que controlan qué módulos están habilitados para cada tenant. La arquitectura es de deploy único: un mismo codebase y una misma instancia sirven a todos los clientes simultáneamente, con aislamiento de datos garantizado por Row Level Security (RLS) a nivel de PostgreSQL.
 

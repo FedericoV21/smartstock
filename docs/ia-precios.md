@@ -4,7 +4,7 @@ version: v0.1
 ultima_actualizacion: 2026-04-20
 ---
 
-# SmartStock — IA de Precios (Gemini)
+# Nexus — IA de Precios (Gemini)
 
 ## Visión general
 
