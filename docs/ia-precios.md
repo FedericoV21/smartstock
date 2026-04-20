@@ -1,14 +1,14 @@
 ---
 estado: 🔴 Pendiente
 version: v0.1
-ultima_actualizacion: 2026-04-13
+ultima_actualizacion: 2026-04-20
 ---
 
 # SmartStock — IA de Precios (Gemini)
 
 ## Visión general
 
-El módulo `ia_precios` (Plan Completo) permite extraer datos de productos desde listas de precios en formato PDF o imagen usando Gemini 1.5 Pro. Los datos extraídos entran al mismo pipeline de importación que el Excel (preview → validación → upsert), reutilizando toda la infraestructura existente.
+El módulo `ia_precios` (Plan Completo) permite extraer datos de productos desde listas de precios en formato PDF o imagen usando Gemini 1.5 Pro. Los datos extraídos entran al mismo pipeline de importación que el Excel (preview → validación → upsert), reutilizando toda la infraestructura existente. Al confirmar, la importación se envía en **lotes** mediante `ejecutarImportacionPorLotes` (`src/lib/importar/client-import.ts`), igual que en el flujo Excel, para evitar requests demasiado grandes.
 
 ```mermaid
 flowchart TD
@@ -20,9 +20,9 @@ flowchart TD
     E -->|No| G[Error: no se pudo extraer datos]
     F --> H[Preview interactivo<br/>Mismo componente que Excel]
     H --> I[Usuario revisa, corrige, confirma]
-    I --> J[POST /api/importar/ejecutar<br/>origen: 'ia_pdf']
-    J --> K[Upsert + movimientos + precio_historial]
-    K --> L[importacion_log con origen 'ia_pdf']
+    I --> J[Varios POST /api/importar/ejecutar<br/>origen: ia_pdf, por lote]
+    J --> K[Upsert + movimientos + precio_historial por lote]
+    K --> L[importacion_log por request + resumen acumulado en cliente]
 ```
 
 ---

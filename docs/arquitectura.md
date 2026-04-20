@@ -97,7 +97,7 @@ smartstock/
 │   │   │   ├── page.tsx              # Dashboard principal con métricas
 │   │   │   ├── productos/            # CRUD de productos
 │   │   │   ├── movimientos/          # Historial de movimientos de stock
-│   │   │   ├── importar/             # Importador Excel: upload → mapeo → preview
+│   │   │   ├── importar/             # Importador: upload → mapeo → preview (borrador filas en IndexedDB) → import por lotes
 │   │   │   ├── facturacion/          # Comprobantes: lista, emisión, detalle
 │   │   │   │   └── pos/             # Terminal POS con escáner (fullscreen, sin sidebar)
 │   │   │   ├── clientes/             # CRUD de clientes
@@ -122,6 +122,7 @@ smartstock/
 │   │   ├── limits.ts                 # Constantes de límites (ej. usuarios activos por tenant)
 │   │   ├── supabase/                 # Clientes Supabase (browser, server, middleware)
 │   │   ├── normalizador/             # Aliases, mapeo, validación, normalización
+│   │   ├── importar/               # Borrador import (draft + IndexedDB), ejecutar-importación, client-import (lotes)
 │   │   ├── facturacion/              # PDF generator, numerador, ARCA (wsaa, wsfe)
 │   │   ├── pos/                      # EAN-13 (generar/validar), barcode-parser, utilidades POS
 │   │   ├── ia/                       # Cliente Gemini y prompts

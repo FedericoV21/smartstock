@@ -1,14 +1,14 @@
 ---
-estado: 🔴 Pendiente
+estado: 🟡 En curso
 version: v0.1
-ultima_actualizacion: 2026-04-13
+ultima_actualizacion: 2026-04-20
 ---
 
 # SmartStock — Importador Excel/CSV
 
 ## Visión general
 
-El importador es uno de los dos módulos "siempre activos". Permite a cualquier tenant cargar datos de productos desde archivos Excel (.xlsx) o CSV, con un pipeline de normalización inteligente que detecta automáticamente las columnas, muestra un preview editable, y ejecuta un upsert atómico contra la base de datos.
+El importador es uno de los dos módulos "siempre activos". Permite a cualquier tenant cargar datos de productos desde archivos Excel (.xlsx) o CSV, con un pipeline de normalización inteligente que detecta automáticamente las columnas, muestra un preview editable, y ejecuta un **upsert fila a fila** en el servidor (por cada request a la API). Para listas muy grandes, el **cliente envía la importación en varios lotes** y el preview usa **virtualización** y **persistencia en IndexedDB** para no trabar el navegador ni chocar con el límite típico de `sessionStorage`.
 
 Tiene dos niveles:
 
@@ -33,23 +33,43 @@ flowchart TD
         K --> L[Preview con validación]
         L --> M[Usuario corrige errores inline]
         M --> N[Confirma importación]
-        N --> O[POST /api/importar/ejecutar]
+        N --> O[Cliente: lotes vía ejecutarImportacionPorLotes]
+        O --> P[POST /api/importar/ejecutar por lote]
     end
 
     subgraph Nivel2["Nivel 2 — IA"]
-        P[Upload PDF/imagen] --> Q[POST /api/ia/extraer]
-        Q --> R[Gemini extrae JSON]
-        R --> L
+        P_IA[Upload PDF/imagen] --> Q_IA[POST /api/ia/extraer]
+        Q_IA --> R_IA[Gemini extrae JSON]
+        R_IA --> L
     end
 
     subgraph Backend["Servidor"]
-        O --> S[Upsert por código+tenant]
+        P --> S[Upsert por código+tenant en el lote]
         S --> T[registrar_movimiento por producto]
         T --> U[precio_historial si cambió precio]
-        U --> V[importacion_log]
-        V --> W[Resumen final]
+        U --> V[importacion_log por request]
+        V --> W[Resumen final en cliente]
     end
 ```
+
+---
+
+## Rendimiento e importaciones grandes
+
+Cambios aplicados para soportar archivos con muchas filas sin congelar la UI ni perder el borrador entre pasos:
+
+| Aspecto | Implementación |
+|--------|----------------|
+| **Borrador entre pantallas** | `src/lib/importar/draft.ts`: en `sessionStorage` solo va metadata liviana (`draftId`, headers, mapeo, proveedor, flags). Las **filas** se guardan en **IndexedDB** (base `smartstock-imports`, store `draftRows`, clave = `draftId`). Si IndexedDB no está disponible, fallback a `sessionStorage` con clave `smartstock-import-draft-rows:<draftId>` (sigue existiendo riesgo de cuota en navegadores muy restrictivos). Los drafts antiguos con filas embebidas en JSON siguen siendo legibles al migrar. |
+| **API del borrador** | `readImportDraft`, `writeImportDraft` y `clearImportDraft` son **asíncronos** (persisten filas antes de actualizar `sessionStorage`). |
+| **Preview** | `src/components/importar/preview-table.tsx`: por encima de un umbral de filas (~150) la tabla **virtualiza** el cuerpo: solo se renderizan filas visibles + espaciadores, manteniendo el preview completo en datos. |
+| **Página preview** | `src/app/(dashboard)/importar/preview/page.tsx`: guardado del borrador con **debounce** (~350 ms) tras cambios; en ediciones comunes se usa `validarFila` para no revalidar todo el archivo en cada tecla. |
+| **Confirmación** | `src/lib/importar/client-import.ts`: `ejecutarImportacionPorLotes` parte el payload en chunks (tamaño por defecto **250** filas), llama varias veces a `POST /api/importar/ejecutar`, acumula contadores y **reindexa** `detalle_errores[].fila` respecto del total importado. |
+| **Servidor por lote** | `src/lib/importar/ejecutar-importacion.ts`: al inicio de cada request se precargan productos existentes del lote con **una** consulta `.in('codigo', …)` y un `Map` en memoria, en lugar de un `select` por fila. Los errores guardan `valor_original` **truncado** para no inflar logs. |
+
+**Nota:** Cada request a `/api/importar/ejecutar` sigue escribiendo un registro en `importacion_log` para ese lote. El resumen que ve el usuario en `/importar/resumen` agrega el resultado de todos los lotes en el cliente.
+
+Los bloques de código más abajo en este documento son **ilustrativos** o reflejan versiones anteriores; la fuente de verdad es el código en `src/`.
 
 ---
 
@@ -507,6 +527,8 @@ export function MapeoColumnas({ mapeo, onMapeoChange, onConfirmar, filasMuestra 
 
 ## Paso 4 — Validación de datos
 
+En el código actual, además de `validarFilas` existe **`validarFila`** para revalidar una sola fila durante el preview (ediciones incrementales). Ver `src/lib/normalizador/validar.ts`.
+
 ```typescript
 // src/lib/normalizador/validar.ts
 import { type CampoProducto } from './aliases';
@@ -669,6 +691,8 @@ function parsearFecha(valor: string): string | null {
 
 ## Paso 5 — Preview interactivo
 
+El componente real (`src/components/importar/preview-table.tsx`) incluye columnas mapeadas por header, acciones masivas, sugerencias de IA (cuando aplica) y **virtualización** del cuerpo de la tabla para listas largas. El fragmento siguiente es una versión simplificada histórica.
+
 ```typescript
 // src/components/importar/preview-table.tsx
 'use client';
@@ -800,6 +824,8 @@ export function PreviewTable({
 ---
 
 ## Paso 6 — Ejecución del upsert en el servidor
+
+La ruta real usa `getTenantSession`, `moduloGuard` y delega en `ejecutarImportacionFilas` (`src/lib/importar/ejecutar-importacion.ts`). El cliente puede invocarla **varias veces** con subconjuntos de filas; ver `ejecutarImportacionPorLotes` en `src/lib/importar/client-import.ts`.
 
 ### API Route `/api/importar/ejecutar`
 
