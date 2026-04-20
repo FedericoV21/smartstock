@@ -2,12 +2,17 @@ import type { SupabaseClient } from '@supabase/supabase-js';
 
 import type { Database } from '@/types/database';
 
+import { fetchWsfePost } from './fetch-wsfe-retry';
 import { formatFetchError } from './format-fetch-error';
 import { getEndpoints } from './endpoints';
 import { logArcaOperacion } from './logger';
 import { CONCEPTO, mapTipoComprobante, mapTipoDocReceptor } from './tipos';
 import { asegurarTicketVigente } from './wsaa';
-import { buildFECAESolicitar, buildFECompUltimoAutorizado } from './xml-builder';
+import {
+  buildFECAESolicitar,
+  buildFECompUltimoAutorizado,
+  type TributoAFIP,
+} from './xml-builder';
 
 export interface SolicitudCAE {
   tenantId: string;
@@ -19,6 +24,8 @@ export interface SolicitudCAE {
   importeNeto: number;
   importeIVA: number;
   alicuotaIVA: number;
+  impTrib?: number;
+  tributos?: TributoAFIP[];
 }
 
 export interface ResultadoCAE {
@@ -65,11 +72,13 @@ export async function solicitarCAE(
     importeIVA: solicitud.importeIVA,
     importeExento: 0,
     alicuotaIVA: solicitud.alicuotaIVA,
+    impTrib: solicitud.impTrib,
+    tributos: solicitud.tributos,
   });
 
   let responseXml: string;
   try {
-    const response = await fetch(endpoints.wsfe, {
+    const response = await fetchWsfePost(endpoints.wsfe, {
       method: 'POST',
       headers: {
         'Content-Type': 'text/xml; charset=utf-8',
@@ -181,7 +190,7 @@ export async function consultarUltimoComprobante(
 
   let response: Response;
   try {
-    response = await fetch(endpoints.wsfe, {
+    response = await fetchWsfePost(endpoints.wsfe, {
       method: 'POST',
       headers: {
         'Content-Type': 'text/xml; charset=utf-8',

@@ -10,6 +10,15 @@ export function buildLoginCmsRequest(cmsBase64: string): string {
 </soapenv:Envelope>`;
 }
 
+/** Tributo según WSFEv1 (p. ej. Id 99 — Otros tributos / recargo financiero). */
+export interface TributoAFIP {
+  id: number;
+  descripcion: string;
+  baseImp: number;
+  alicuota: number;
+  importe: number;
+}
+
 export interface FECAEParams {
   token: string;
   sign: string;
@@ -27,14 +36,42 @@ export interface FECAEParams {
   importeIVA: number;
   importeExento: number;
   alicuotaIVA: number;
+  /** Suma de importes de tributos (debe coincidir con la suma de Tributo.Importe). */
+  impTrib?: number;
+  tributos?: TributoAFIP[];
   fechaServicioDesde?: string;
   fechaServicioHasta?: string;
   fechaVtoPago?: string;
 }
 
+function escapeXmlText(s: string): string {
+  return s
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;');
+}
+
 export function buildFECAESolicitar(params: FECAEParams): string {
   const tieneServicio = params.concepto !== 1;
   const informarObjetoIva = !esComprobanteTipoC(params.tipoComprobante);
+  const impTrib = params.impTrib ?? 0;
+  const tributosXml =
+    params.tributos && params.tributos.length > 0
+      ? `<ar:Tributos>
+${params.tributos
+  .map(
+    (t) => `            <ar:Tributo>
+              <ar:Id>${t.id}</ar:Id>
+              <ar:Desc>${escapeXmlText(t.descripcion)}</ar:Desc>
+              <ar:BaseImp>${t.baseImp.toFixed(2)}</ar:BaseImp>
+              <ar:Alic>${t.alicuota.toFixed(2)}</ar:Alic>
+              <ar:Importe>${t.importe.toFixed(2)}</ar:Importe>
+            </ar:Tributo>`,
+  )
+  .join('\n')}
+          </ar:Tributos>`
+      : '';
 
   return `<?xml version="1.0" encoding="UTF-8"?>
 <soapenv:Envelope xmlns:soapenv="http://schemas.xmlsoap.org/soap/envelope/"
@@ -65,12 +102,13 @@ export function buildFECAESolicitar(params: FECAEParams): string {
             <ar:ImpNeto>${params.importeNeto.toFixed(2)}</ar:ImpNeto>
             <ar:ImpOpEx>${params.importeExento.toFixed(2)}</ar:ImpOpEx>
             <ar:ImpIVA>${params.importeIVA.toFixed(2)}</ar:ImpIVA>
-            <ar:ImpTrib>0.00</ar:ImpTrib>
+            <ar:ImpTrib>${impTrib.toFixed(2)}</ar:ImpTrib>
             ${tieneServicio ? `<ar:FchServDesde>${params.fechaServicioDesde}</ar:FchServDesde>
             <ar:FchServHasta>${params.fechaServicioHasta}</ar:FchServHasta>
             <ar:FchVtoPago>${params.fechaVtoPago}</ar:FchVtoPago>` : ''}
             <ar:MonId>PES</ar:MonId>
             <ar:MonCotiz>1</ar:MonCotiz>
+            ${tributosXml}
             ${informarObjetoIva ? `<ar:Iva>
               <ar:AlicIva>
                 <ar:Id>${mapAlicuotaIVAId(params.alicuotaIVA)}</ar:Id>

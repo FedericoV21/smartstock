@@ -122,6 +122,7 @@ El proyecto estará disponible en `http://localhost:3000`.
 | [stock.md](./stock.md) | CRUD productos, movimientos, alertas, vencimientos |
 | [importador.md](./importador.md) | Importación Excel/CSV, normalizador, pipeline, IA |
 | [facturacion.md](./facturacion.md) | Facturador simple, PDF, numeración, descuento de stock |
+| [medios-de-pago-y-financiacion.md](./medios-de-pago-y-financiacion.md) | Atajos del POS, opciones por medio, pago mixto, migraciones 038/039 |
 | [pedidos.md](./pedidos.md) | Pedidos, presupuestos, estados, conversión a factura |
 | [ia-precios.md](./ia-precios.md) | Extracción con Gemini, prompt, preview, historial |
 | [analizador.md](./analizador.md) | Listas de proveedores, matching, simulación de márgenes, forecast y rentabilidad |

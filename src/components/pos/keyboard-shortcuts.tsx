@@ -15,7 +15,7 @@ interface ShortcutHandlers {
 
 const SHORTCUTS = [
   { key: 'F2', desc: 'Cobrar / abrir modal de pago' },
-  { key: 'F3', desc: 'Buscar producto por nombre' },
+  { key: 'F3', desc: 'Foco en el campo de escaneo / búsqueda' },
   { key: 'F4', desc: 'Cambiar cliente' },
   { key: 'F8', desc: 'Cancelar venta' },
   { key: 'F12', desc: 'Cambiar tipo de comprobante' },

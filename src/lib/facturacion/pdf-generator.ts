@@ -40,6 +40,11 @@ interface DatosComprobante {
   notas: string | null;
   cae: string | null;
   cae_vencimiento: string | null;
+  /** Total de mercadería antes del ajuste por medio de pago (IVA incl. en precios). */
+  total_mercaderia?: number | null;
+  financiacion_monto?: number | null;
+  financiacion_porcentaje?: number | null;
+  financiacion_descripcion?: string | null;
 }
 
 const CONDICION_IVA_LABELS: Record<string, string> = {
@@ -239,9 +244,32 @@ export function generarPDF(
     y += 5;
   }
 
+  const tm = comprobante.total_mercaderia;
+  const fm = comprobante.financiacion_monto;
+
+  if (tm != null && fm != null && Math.abs(fm) > 0.001) {
+    doc.setFont('helvetica', 'normal');
+    doc.setFontSize(10);
+    const pct = comprobante.financiacion_porcentaje;
+    const pctLabel = pct != null && !Number.isNaN(pct) ? ` (${pct >= 0 ? '+' : ''}${pct}%)` : '';
+    const desc = (comprobante.financiacion_descripcion ?? '').trim();
+
+    if (fm < 0) {
+      doc.text('Total mercadería:', totalesX - 50, y);
+      doc.text(formatCurrency(tm), totalesX, y, { align: 'right' });
+      y += 5;
+    }
+
+    const etiqueta = fm < 0 ? `Descuento financiero${pctLabel}` : `Recargo financiero${pctLabel}`;
+    const detalle = desc ? `${etiqueta}: ${desc}` : etiqueta;
+    doc.text(detalle, totalesX - 50, y, { maxWidth: totalesX - margin - 5 });
+    doc.text(formatCurrency(fm), totalesX, y, { align: 'right' });
+    y += Math.max(5, desc.length > 42 ? 10 : 5);
+  }
+
   doc.setFont('helvetica', 'bold');
   doc.setFontSize(12);
-  doc.text('TOTAL:', totalesX - 50, y);
+  doc.text('TOTAL A PAGAR:', totalesX - 50, y);
   doc.text(formatCurrency(comprobante.total), totalesX, y, { align: 'right' });
   y += 8;
 

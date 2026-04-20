@@ -2,7 +2,7 @@
 
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useMemo, useState } from 'react';
 
 import { Button, buttonVariants } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -45,6 +45,13 @@ type ItemForm = {
   producto: Producto;
   cantidad: number;
   precio_unitario: number;
+};
+
+type MedioPagoRow = {
+  id: string;
+  nombre: string;
+  activo: boolean;
+  medio_pago_opcion: { id: string; cuotas: number; recargo_porcentaje: number }[];
 };
 
 function determinarTipoLocal(
@@ -95,6 +102,9 @@ export function EmitirComprobanteClient({ initialTipo }: { initialTipo?: string 
   const [notas, setNotas] = useState('');
   const [emitiendo, setEmitiendo] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [mediosPago, setMediosPago] = useState<MedioPagoRow[]>([]);
+  const [medioPagoId, setMedioPagoId] = useState('');
+  const [opcionPagoId, setOpcionPagoId] = useState('');
 
   useEffect(() => {
     if (initialTipo === 'presupuesto') {
@@ -104,12 +114,13 @@ export function EmitirComprobanteClient({ initialTipo }: { initialTipo?: string 
 
   const loadData = useCallback(async () => {
     setLoading(true);
-    const [cRes, pRes, tRes, mRes, perfilRes] = await Promise.all([
+    const [cRes, pRes, tRes, mRes, perfilRes, mpRes] = await Promise.all([
       fetch('/api/clientes'),
       fetch('/api/productos'),
       fetch('/api/configuracion/tenant'),
       fetch('/api/configuracion/plan'),
       fetch('/api/perfil'),
+      fetch('/api/configuracion/medios-de-pago'),
     ]);
 
     if (cRes.ok) {
@@ -133,8 +144,28 @@ export function EmitirComprobanteClient({ initialTipo }: { initialTipo?: string 
       const pJson = await perfilRes.json();
       if (pJson.ivaDefault != null) setIvaDefault(pJson.ivaDefault);
     }
+    if (mpRes.ok) {
+      const mpJson = await mpRes.json();
+      const list = (mpJson.medios ?? []) as MedioPagoRow[];
+      setMediosPago(list.filter((m) => m.activo && (m.medio_pago_opcion?.length ?? 0) > 0));
+    }
     setLoading(false);
   }, []);
+
+  useEffect(() => {
+    if (!medioPagoId) {
+      setOpcionPagoId('');
+      return;
+    }
+    const m = mediosPago.find((x) => x.id === medioPagoId);
+    if (!m?.medio_pago_opcion?.length) {
+      setOpcionPagoId('');
+      return;
+    }
+    setOpcionPagoId((prev) =>
+      m.medio_pago_opcion.some((o) => o.id === prev) ? prev : m.medio_pago_opcion[0].id,
+    );
+  }, [medioPagoId, mediosPago]);
 
   useEffect(() => {
     void loadData();
@@ -204,6 +235,21 @@ export function EmitirComprobanteClient({ initialTipo }: { initialTipo?: string 
   const netoGravado = Math.round((subtotal - ivaMonto) * 100) / 100;
   const total = Math.round(subtotal * 100) / 100;
 
+  const opcionFinActiva = useMemo(() => {
+    if (!opcionPagoId) return null;
+    for (const m of mediosPago) {
+      const o = m.medio_pago_opcion?.find((x) => x.id === opcionPagoId);
+      if (o) return { ...o, medioNombre: m.nombre };
+    }
+    return null;
+  }, [opcionPagoId, mediosPago]);
+
+  const totalConFinanciacion = useMemo(() => {
+    if (!opcionFinActiva) return total;
+    const p = opcionFinActiva.recargo_porcentaje;
+    return Math.round((total + (total * p) / 100) * 100) / 100;
+  }, [total, opcionFinActiva]);
+
   async function handleEmitir() {
     if (!clienteId || !tipo || items.length === 0) return;
     setEmitiendo(true);
@@ -221,6 +267,7 @@ export function EmitirComprobanteClient({ initialTipo }: { initialTipo?: string 
           precio_unitario: i.precio_unitario,
         })),
         notas: notas || undefined,
+        medio_pago_opcion_id: opcionPagoId || undefined,
       }),
     });
 
@@ -455,8 +502,16 @@ export function EmitirComprobanteClient({ initialTipo }: { initialTipo?: string 
               </p>
             )}
             <p className="text-lg font-bold">
-              Total: <span className="font-mono">{formatCurrency(total)}</span>
+              Total:{' '}
+              <span className="font-mono">{formatCurrency(totalConFinanciacion)}</span>
             </p>
+            {opcionFinActiva && Math.abs(totalConFinanciacion - total) > 0.001 ? (
+              <p className="text-xs text-muted-foreground">
+                Mercadería {formatCurrency(total)} · medio {opcionFinActiva.medioNombre} (
+                {opcionFinActiva.recargo_porcentaje >= 0 ? '+' : ''}
+                {opcionFinActiva.recargo_porcentaje}%)
+              </p>
+            ) : null}
             {showMargen && (
               <p className={cn('text-sm font-medium', margenColor(margenTotalPct))}>
                 Margen total: {formatCurrency(margenTotal)} ({margenTotalPct.toFixed(1)}%)
@@ -465,6 +520,52 @@ export function EmitirComprobanteClient({ initialTipo }: { initialTipo?: string 
           </div>
         );
       })() : null}
+
+      <div className="rounded-xl border bg-card p-4 shadow-sm space-y-3">
+        <p className="text-sm font-medium">Medio de pago (opcional)</p>
+        <p className="text-xs text-muted-foreground">
+          Si elegís un plan con recargo o descuento, el total se ajusta y, con ARCA, el recargo se informa
+          como tributo 99.
+        </p>
+        <div className="grid gap-3 sm:grid-cols-2">
+          <label className="grid gap-1 text-sm">
+            <span className="text-muted-foreground">Medio</span>
+            <select
+              value={medioPagoId}
+              onChange={(e) => {
+                setMedioPagoId(e.target.value);
+                setOpcionPagoId('');
+              }}
+              className="flex h-9 w-full rounded-md border border-input bg-transparent px-3 py-1 text-sm shadow-xs"
+            >
+              <option value="">Sin plan configurado</option>
+              {mediosPago.map((m) => (
+                <option key={m.id} value={m.id}>
+                  {m.nombre}
+                </option>
+              ))}
+            </select>
+          </label>
+          {medioPagoId ? (
+            <label className="grid gap-1 text-sm">
+              <span className="text-muted-foreground">Cuotas / %</span>
+              <select
+                value={opcionPagoId}
+                onChange={(e) => setOpcionPagoId(e.target.value)}
+                className="flex h-9 w-full rounded-md border border-input bg-transparent px-3 py-1 text-sm shadow-xs"
+              >
+                {(mediosPago.find((x) => x.id === medioPagoId)?.medio_pago_opcion ?? []).map((o) => (
+                  <option key={o.id} value={o.id}>
+                    {o.cuotas === 1 ? 'Contado' : `${o.cuotas} cuotas`} (
+                    {o.recargo_porcentaje >= 0 ? '+' : ''}
+                    {o.recargo_porcentaje}%)
+                  </option>
+                ))}
+              </select>
+            </label>
+          ) : null}
+        </div>
+      </div>
 
       <label className="grid gap-1 text-sm">
         <span className="text-muted-foreground">

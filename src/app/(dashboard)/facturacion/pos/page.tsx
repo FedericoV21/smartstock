@@ -3,13 +3,16 @@
 import Link from 'next/link';
 import { useCallback, useEffect, useRef, useState } from 'react';
 
-import { BarcodeInput, type BarcodeInputRef } from '@/components/pos/barcode-input';
 import { CobroModal } from '@/components/pos/cobro-modal';
 import {
   ShortcutsHelpModal,
   usePosKeyboardShortcuts,
 } from '@/components/pos/keyboard-shortcuts';
-import { ProductSearchModal } from '@/components/pos/product-search-modal';
+import {
+  PosScanInlineSearch,
+  type PosScanInlineSearchRef,
+  type ProductSearchResult,
+} from '@/components/pos/pos-scan-inline-search';
 import { Button, buttonVariants } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import {
@@ -64,6 +67,39 @@ export type CartItem = {
   cantidad: number;
   peso?: number;
 };
+
+/** Tolerancia para comparar cantidades decimales (pesables) con stock. */
+const STOCK_EPS = 1e-6;
+
+function cantidadOtrosItemsMismoProducto(
+  items: CartItem[],
+  productId: string,
+  excludeIdx?: number,
+): number {
+  return items.reduce((sum, it, idx) => {
+    if (excludeIdx !== undefined && idx === excludeIdx) return sum;
+    if (it.producto.id === productId) return sum + it.cantidad;
+    return sum;
+  }, 0);
+}
+
+/** Si el carrito supera el stock de algún producto (sumando líneas), devuelve el nombre del primero. */
+function primerProductoConStockExcedido(items: CartItem[]): string | null {
+  const agg = new Map<string, { nombre: string; total: number; stock: number }>();
+  for (const it of items) {
+    const cur = agg.get(it.producto.id);
+    const total = (cur?.total ?? 0) + it.cantidad;
+    agg.set(it.producto.id, {
+      nombre: it.producto.nombre,
+      total,
+      stock: it.producto.stock_actual,
+    });
+  }
+  for (const v of agg.values()) {
+    if (v.total > v.stock + STOCK_EPS) return v.nombre;
+  }
+  return null;
+}
 
 type DescuentoTipo = 'porcentaje' | 'monto';
 
@@ -162,7 +198,7 @@ function CantidadEditor({
 }
 
 export default function PosPage() {
-  const barcodeRef = useRef<BarcodeInputRef>(null);
+  const posScanRef = useRef<PosScanInlineSearchRef>(null);
   const [tenantId, setTenantId] = useState('');
   const [tenantIva, setTenantIva] = useState<CondicionIVA>('consumidor_final');
   const [tenantName, setTenantName] = useState('');
@@ -198,10 +234,6 @@ export default function PosPage() {
   const [showWeightModal, setShowWeightModal] = useState(false);
   const [weightProduct, setWeightProduct] = useState<ProductoScanned | null>(null);
   const [weightInput, setWeightInput] = useState('');
-
-  // Product search modal
-  const [showSearch, setShowSearch] = useState(false);
-  const [searchInitialQuery, setSearchInitialQuery] = useState('');
 
   // Cancel confirmation
   const [showCancelConfirm, setShowCancelConfirm] = useState(false);
@@ -324,6 +356,7 @@ export default function PosPage() {
   const clienteCondicionIva = normalizarCondicionIVA(clienteActual?.condicion_iva);
 
   const addUnitProduct = useCallback((producto: ProductoScanned) => {
+    const bloqueante = normalizePosPrefs(posPrefs).stockBloqueante;
     setItems((prev) => {
       const existing = prev.findIndex(
         (it) => it.producto.id === producto.id && !it.peso,
@@ -331,27 +364,32 @@ export default function PosPage() {
       if (existing >= 0) {
         const updated = [...prev];
         const newCant = updated[existing].cantidad + 1;
+        if (bloqueante && newCant > producto.stock_actual + STOCK_EPS) {
+          setStockWarning(
+            `"${producto.nombre}": stock insuficiente (disponible ${producto.stock_actual}).`,
+          );
+          return prev;
+        }
         updated[existing] = { ...updated[existing], cantidad: newCant };
         setHighlightIdx(existing);
-        if (newCant > producto.stock_actual) {
-          setStockWarning(
-            `"${producto.nombre}" tiene stock ${producto.stock_actual}, se agregaron ${newCant}.`,
-          );
-        }
         return updated;
       }
 
-      if (1 > producto.stock_actual) {
-        setStockWarning(
-          `"${producto.nombre}" tiene stock ${producto.stock_actual}.`,
-        );
+      if (bloqueante) {
+        const otros = cantidadOtrosItemsMismoProducto(prev, producto.id);
+        if (otros + 1 > producto.stock_actual + STOCK_EPS) {
+          setStockWarning(
+            `"${producto.nombre}": stock insuficiente (disponible ${producto.stock_actual}).`,
+          );
+          return prev;
+        }
       }
 
       const newItems = [...prev, { producto, cantidad: 1 }];
       setHighlightIdx(newItems.length - 1);
       return newItems;
     });
-  }, []);
+  }, [posPrefs]);
 
   const addProduct = useCallback(
     (producto: ProductoScanned) => {
@@ -371,12 +409,18 @@ export default function PosPage() {
     [addUnitProduct],
   );
 
-  const openSearchWith = useCallback((initial: string) => {
-    setScanError('');
-    setStockWarning('');
-    setLastScanned(null);
-    setSearchInitialQuery(initial);
-    setShowSearch(true);
+  const mapSearchToProducto = useCallback((p: ProductSearchResult): ProductoScanned => {
+    return {
+      id: p.id,
+      codigo: p.codigo,
+      codigo_barras: p.codigo_barras ?? null,
+      nombre: p.nombre,
+      precio_venta: p.precio_venta,
+      stock_actual: p.stock_actual,
+      es_pesable: p.es_pesable,
+      unidad: p.unidad,
+      iva_porcentaje: p.iva_porcentaje,
+    };
   }, []);
 
   const handleScan = useCallback(
@@ -385,10 +429,9 @@ export default function PosPage() {
       setStockWarning('');
       setLastScanned(null);
 
-      // Heuristic: free-text input (spaces or accents) → skip the
-      // barcode lookup and go straight to the search modal.
+      // Texto con espacio o acento: no es un código de barras “seco”; buscar por nombre.
       if (/[\s\u00C0-\u017F]/.test(codigo)) {
-        openSearchWith(codigo);
+        posScanRef.current?.searchWithQuery(codigo);
         return;
       }
 
@@ -403,9 +446,7 @@ export default function PosPage() {
         );
 
         if (res.status === 404) {
-          // Not a known code/SKU/PLU → fall back to name search with the
-          // typed phrase pre-filled, so "martillo" or "clavo" still work.
-          openSearchWith(codigo);
+          posScanRef.current?.searchWithQuery(codigo);
           return;
         }
 
@@ -423,7 +464,17 @@ export default function PosPage() {
           const cantidad = data.producto.unidad === 'gramo'
             ? Math.round(data.peso * 1000)
             : data.peso;
+          const bloqueante = normalizePosPrefs(posPrefs).stockBloqueante;
           setItems((prev) => {
+            if (bloqueante) {
+              const otros = cantidadOtrosItemsMismoProducto(prev, data.producto.id);
+              if (otros + cantidad > data.producto.stock_actual + STOCK_EPS) {
+                setStockWarning(
+                  `"${data.producto.nombre}": stock insuficiente (disponible ${data.producto.stock_actual}).`,
+                );
+                return prev;
+              }
+            }
             const newItems = [
               ...prev,
               { producto: data.producto, cantidad, peso: cantidad },
@@ -447,12 +498,23 @@ export default function PosPage() {
         setScanError('Error de conexión');
       }
     },
-    [addUnitProduct, openSearchWith],
+    [addUnitProduct, posPrefs],
   );
 
   function confirmWeight() {
     const peso = parseFloat(weightInput);
     if (!peso || peso <= 0 || !weightProduct) return;
+
+    const bloqueante = normalizePosPrefs(posPrefs).stockBloqueante;
+    if (bloqueante) {
+      const otros = cantidadOtrosItemsMismoProducto(items, weightProduct.id);
+      if (otros + peso > weightProduct.stock_actual + STOCK_EPS) {
+        setStockWarning(
+          `"${weightProduct.nombre}": stock insuficiente (disponible ${weightProduct.stock_actual}).`,
+        );
+        return;
+      }
+    }
 
     setItems((prev) => {
       const newItems = [
@@ -468,17 +530,36 @@ export default function PosPage() {
 
   function updateCantidad(idx: number, val: number) {
     if (!val || val <= 0) return;
+    const bloqueante = normalizePosPrefs(posPrefs).stockBloqueante;
     setItems((prev) => {
       const updated = [...prev];
-      updated[idx] = { ...updated[idx], cantidad: val };
+      const it = updated[idx];
+      let next = val;
+      if (bloqueante) {
+        const maxPermitido =
+          it.producto.stock_actual - cantidadOtrosItemsMismoProducto(prev, it.producto.id, idx);
+        if (next > maxPermitido + STOCK_EPS) {
+          next = Math.max(0, maxPermitido);
+        }
+      }
+      if (next <= 0) return prev;
+      updated[idx] = { ...updated[idx], cantidad: next };
       return updated;
     });
   }
 
   function adjustCantidad(idx: number, delta: number) {
+    const bloqueante = normalizePosPrefs(posPrefs).stockBloqueante;
     setItems((prev) => {
       const item = prev[idx];
-      const next = Math.round((item.cantidad + delta) * 1000) / 1000;
+      let next = Math.round((item.cantidad + delta) * 1000) / 1000;
+      if (bloqueante) {
+        const maxPermitido =
+          item.producto.stock_actual - cantidadOtrosItemsMismoProducto(prev, item.producto.id, idx);
+        if (next > maxPermitido + STOCK_EPS) {
+          next = Math.max(0, maxPermitido);
+        }
+      }
       if (next <= 0) return prev;
       const updated = [...prev];
       updated[idx] = { ...updated[idx], cantidad: next };
@@ -498,7 +579,7 @@ export default function PosPage() {
     setStockWarning('');
     setShowCancelConfirm(false);
     if (tenantId) clearCart(tenantId);
-    barcodeRef.current?.focus();
+    posScanRef.current?.focus();
   }
 
   // Calculations
@@ -548,20 +629,25 @@ export default function PosPage() {
     showClienteSearch ||
     showWeightModal ||
     showCancelConfirm ||
-    showCobro ||
-    showSearch;
+    showCobro;
 
   const prefsPos = normalizePosPrefs(clampPosPrefsForArca(posPrefs, arcaConfigurado));
   const puedeAlternarComprobante = prefsPos.aceptaTicket && prefsPos.aceptaFactura;
 
+  const productoStockExcedido = prefsPos.stockBloqueante
+    ? primerProductoConStockExcedido(items)
+    : null;
+  const ventaBloqueadaPorStock = productoStockExcedido !== null;
+
   const { showHelp, setShowHelp } = usePosKeyboardShortcuts({
     onCobrar: () => {
-      if (items.length > 0 && canEmit && !anyModalOpen) setShowCobro(true);
+      if (items.length > 0 && canEmit && !anyModalOpen && !ventaBloqueadaPorStock) {
+        setShowCobro(true);
+      }
     },
     onBuscarProducto: () => {
       if (canEmit && !anyModalOpen) {
-        setSearchInitialQuery('');
-        setShowSearch(true);
+        posScanRef.current?.focus();
       }
     },
     onCambiarCliente: () => {
@@ -703,13 +789,14 @@ export default function PosPage() {
       {/* Main area */}
       <div className="flex flex-1 overflow-hidden">
         {/* Left: Scan + items list (~65%) */}
-        <div className="flex flex-[65] flex-col p-4 gap-3 overflow-hidden">
+        <div className="flex min-h-0 flex-[65] flex-col gap-3 overflow-x-hidden p-4">
           {/* Scan bar */}
           <div className="shrink-0 flex gap-2">
-            <div className="flex-1">
-              <BarcodeInput
-                ref={barcodeRef}
+            <div className="relative min-w-0 flex-1">
+              <PosScanInlineSearch
+                ref={posScanRef}
                 onScan={handleScan}
+                onSelectProduct={(p) => addProduct(mapSearchToProducto(p))}
                 placeholder="Escaneá código, escribí SKU o nombre del producto…"
                 pauseRefocus={anyModalOpen}
                 disabled={!canEmit}
@@ -720,11 +807,8 @@ export default function PosPage() {
               variant="outline"
               className="h-12 px-4 shrink-0"
               disabled={!canEmit}
-              onClick={() => {
-                setSearchInitialQuery('');
-                setShowSearch(true);
-              }}
-              title="Buscar por nombre (F3)"
+              onClick={() => posScanRef.current?.focus()}
+              title="Foco en búsqueda (F3)"
             >
               🔍 Buscar (F3)
             </Button>
@@ -911,11 +995,17 @@ export default function PosPage() {
 
             <Button
               className="w-full h-16 text-xl font-bold"
-              disabled={items.length === 0 || !canEmit}
+              disabled={items.length === 0 || !canEmit || ventaBloqueadaPorStock}
               onClick={() => setShowCobro(true)}
             >
               COBRAR (F2)
             </Button>
+
+            {ventaBloqueadaPorStock && productoStockExcedido && (
+              <p className="text-xs text-center text-destructive">
+                Stock insuficiente para cobrar (revisá «{productoStockExcedido}» o ajustá cantidades).
+              </p>
+            )}
 
             {items.length > 0 && (
               <Button
@@ -1026,6 +1116,7 @@ export default function PosPage() {
       {showCobro && (
         <CobroModal
           items={items}
+          stockBloqueante={prefsPos.stockBloqueante}
           clienteId={clienteId}
           clienteNombre={clienteNombre}
           clienteCondicionIva={clienteCondicionIva}
@@ -1092,29 +1183,6 @@ export default function PosPage() {
           </div>
         </div>
       )}
-
-      <ProductSearchModal
-        open={showSearch}
-        initialQuery={searchInitialQuery}
-        onClose={() => {
-          setShowSearch(false);
-          setSearchInitialQuery('');
-          barcodeRef.current?.focus();
-        }}
-        onSelect={(p) => {
-          addProduct({
-            id: p.id,
-            codigo: p.codigo,
-            codigo_barras: p.codigo_barras ?? null,
-            nombre: p.nombre,
-            precio_venta: p.precio_venta,
-            stock_actual: p.stock_actual,
-            es_pesable: p.es_pesable,
-            unidad: p.unidad,
-            iva_porcentaje: p.iva_porcentaje,
-          });
-        }}
-      />
 
       <ShortcutsHelpModal open={showHelp} onClose={() => setShowHelp(false)} />
     </>

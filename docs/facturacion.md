@@ -1077,3 +1077,9 @@ export interface ComprobanteItem {
   subtotal: number;
 }
 ```
+
+---
+
+## Medios de pago y pago mixto
+
+La configuración de recargos o descuentos por método (atajos del POS), planes por `medio_pago_opcion` y la lógica de **pago mixto** (montos parciales que suman la mercadería, ajuste proporcional y coherencia con PDF/ARCA) están documentadas en **[medios-de-pago-y-financiacion.md](./medios-de-pago-y-financiacion.md)**.

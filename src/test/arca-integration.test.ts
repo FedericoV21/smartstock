@@ -130,6 +130,42 @@ describe('ARCA - Unit tests (crypto, tipos, xml)', () => {
     expect(xml).not.toContain('<ar:Iva>');
   });
 
+  it('buildFECAESolicitar incluye tributo 99 y ImpTrib cuando hay recargo', () => {
+    const xml = buildFECAESolicitar({
+      token: 'tok',
+      sign: 'sig',
+      cuit: '20123456789',
+      puntoDeVenta: 1,
+      tipoComprobante: 6,
+      concepto: CONCEPTO.PRODUCTOS,
+      numeroDesde: 1,
+      numeroHasta: 1,
+      fechaComprobante: '20260416',
+      tipoDocReceptor: 99,
+      nroDocReceptor: '0',
+      importeTotal: 126,
+      importeNeto: 100,
+      importeIVA: 21,
+      importeExento: 0,
+      alicuotaIVA: 21,
+      impTrib: 5,
+      tributos: [
+        {
+          id: 99,
+          descripcion: 'Recargo financiero — Visa (3 cuotas)',
+          baseImp: 121,
+          alicuota: 5,
+          importe: 5,
+        },
+      ],
+    });
+
+    expect(xml).toContain('<ar:ImpTrib>5.00</ar:ImpTrib>');
+    expect(xml).toContain('<ar:Id>99</ar:Id>');
+    expect(xml).toContain('<ar:Tributos>');
+    expect(xml).toContain('<ar:ImpTotal>126.00</ar:ImpTotal>');
+  });
+
   it('buildFECompUltimoAutorizado genera XML correcto', () => {
     const xml = buildFECompUltimoAutorizado('tok', 'sig', '20123456789', 1, 6);
     expect(xml).toContain('FECompUltimoAutorizado');

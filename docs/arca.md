@@ -720,6 +720,21 @@ stateDiagram-v2
 
 ---
 
+## Errores de red hacia WSFE (`ECONNRESET`, `fetch failed`)
+
+Mensajes típicos: `TypeError: fetch failed → … code=ECONNRESET`, o `read ECONNRESET` al llamar a `https://servicios1.afip.gov.ar/wsfev1/service.asmx` (producción) u homologación.
+
+| Causa probable | Qué hacer |
+|---|---|
+| Corte transitorio entre tu servidor y AFIP (muy habitual; los servicios de AFIP también devuelven 502/503 a veces) | Reintentar la emisión o **Sincronizar numeración** unos minutos después. El cliente HTTP (`fetchWsfePost` en `fetch-wsfe-retry.ts`) reintenta automáticamente hasta 3 veces con espera exponencial ante `ECONNRESET`, timeouts, DNS intermitente y respuestas 502/503/504. |
+| Firewall, antivirus o proxy corporativo cortando HTTPS largo hacia `*.afip.gov.ar` | Permitir salida TLS a los hosts de la tabla de endpoints; probar desde otra red o sin VPN. |
+| Deploy serverless (cold start + timeout) | Si el error es `AbortError` por timeout de 30s, revisar latencia; el reintento puede aliviar picos. |
+| Problema de certificado o DNS mal configurado | No suele curarse solo; revisar `ENOTFOUND` / `EAI_AGAIN` en el mensaje y conectividad DNS. |
+
+No indica por sí solo un error en el tipo de comprobante (p. ej. Factura C): la consulta `FECompUltimoAutorizado` falló **antes** de obtener respuesta SOAP de negocio.
+
+---
+
 ## Cola de reintentos: Edge Function cron
 
 ```typescript

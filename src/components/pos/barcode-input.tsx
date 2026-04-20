@@ -12,6 +12,8 @@ import { cn } from '@/lib/utils';
 
 interface BarcodeInputProps {
   onScan: (codigo: string) => void;
+  /** Called on every input; `anySlowGap` is true if there was a pause between keystrokes (manual typing). */
+  onBufferChange?: (value: string, meta: { anySlowGap: boolean }) => void;
   autoFocus?: boolean;
   disabled?: boolean;
   placeholder?: string;
@@ -23,6 +25,7 @@ interface BarcodeInputProps {
 export interface BarcodeInputRef {
   focus: () => void;
   blur: () => void;
+  clear: () => void;
 }
 
 const SCAN_CHAR_THRESHOLD_MS = 30;
@@ -33,6 +36,7 @@ export const BarcodeInput = forwardRef<BarcodeInputRef, BarcodeInputProps>(
   function BarcodeInput(
     {
       onScan,
+      onBufferChange,
       autoFocus = true,
       disabled = false,
       placeholder = 'Escaneá un código de barras…',
@@ -44,16 +48,28 @@ export const BarcodeInput = forwardRef<BarcodeInputRef, BarcodeInputProps>(
     const inputRef = useRef<HTMLInputElement>(null);
     const bufferRef = useRef('');
     const lastKeystrokeRef = useRef(0);
+    const anySlowGapRef = useRef(false);
     const isScanningRef = useRef(false);
     const lastScannedRef = useRef<{ code: string; ts: number }>({
       code: '',
       ts: 0,
     });
 
-    useImperativeHandle(ref, () => ({
-      focus: () => inputRef.current?.focus(),
-      blur: () => inputRef.current?.blur(),
-    }));
+    useImperativeHandle(
+      ref,
+      () => ({
+        focus: () => inputRef.current?.focus(),
+        blur: () => inputRef.current?.blur(),
+        clear: () => {
+          bufferRef.current = '';
+          anySlowGapRef.current = false;
+          lastKeystrokeRef.current = 0;
+          if (inputRef.current) inputRef.current.value = '';
+          onBufferChange?.('', { anySlowGap: false });
+        },
+      }),
+      [onBufferChange],
+    );
 
     // Auto-refocus interval
     useEffect(() => {
@@ -70,6 +86,9 @@ export const BarcodeInput = forwardRef<BarcodeInputRef, BarcodeInputProps>(
       const code = bufferRef.current.trim();
       bufferRef.current = '';
       if (inputRef.current) inputRef.current.value = '';
+      anySlowGapRef.current = false;
+      lastKeystrokeRef.current = 0;
+      onBufferChange?.('', { anySlowGap: false });
 
       if (!code) return;
 
@@ -83,7 +102,7 @@ export const BarcodeInput = forwardRef<BarcodeInputRef, BarcodeInputProps>(
 
       lastScannedRef.current = { code, ts: now };
       onScan(code);
-    }, [onScan]);
+    }, [onScan, onBufferChange]);
 
     const handleKeyDown = useCallback(
       (e: React.KeyboardEvent<HTMLInputElement>) => {
@@ -94,8 +113,13 @@ export const BarcodeInput = forwardRef<BarcodeInputRef, BarcodeInputProps>(
         }
 
         const now = Date.now();
-        const delta = now - lastKeystrokeRef.current;
+        const prev = lastKeystrokeRef.current;
+        const delta = prev > 0 ? now - prev : 0;
         lastKeystrokeRef.current = now;
+
+        if (delta > 80) {
+          anySlowGapRef.current = true;
+        }
 
         if (delta < SCAN_CHAR_THRESHOLD_MS) {
           isScanningRef.current = true;
@@ -106,9 +130,15 @@ export const BarcodeInput = forwardRef<BarcodeInputRef, BarcodeInputProps>(
 
     const handleInput = useCallback(
       (e: React.FormEvent<HTMLInputElement>) => {
-        bufferRef.current = (e.target as HTMLInputElement).value;
+        const value = (e.target as HTMLInputElement).value;
+        bufferRef.current = value;
+        if (value.length === 0) {
+          anySlowGapRef.current = false;
+          lastKeystrokeRef.current = 0;
+        }
+        onBufferChange?.(value, { anySlowGap: anySlowGapRef.current });
       },
-      [],
+      [onBufferChange],
     );
 
     return (

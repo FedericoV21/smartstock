@@ -103,3 +103,10 @@ export function rejectIfVisor(rol: RolUsuario) {
   }
   return null;
 }
+
+export function rejectUnlessAdmin(rol: RolUsuario) {
+  if (rol !== 'admin') {
+    return NextResponse.json({ error: 'Solo el administrador puede realizar esta acción.' }, { status: 403 });
+  }
+  return null;
+}

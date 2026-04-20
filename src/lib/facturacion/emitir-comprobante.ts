@@ -1,6 +1,13 @@
 import type { SupabaseClient } from '@supabase/supabase-js';
 
 import { calcularImportes } from '@/lib/facturacion/calcular-importes';
+import {
+  aplicarFinanciacion,
+  aplicarFinanciacionMixto,
+  PARTES_PAGO_MIXTO,
+  type OpcionFinanciacion,
+  type PartePagoMixto,
+} from '@/lib/facturacion/financiacion';
 import { consultarUltimoComprobante, solicitarCAE } from '@/lib/facturacion/arca/wsfe';
 import { formatearTipoComprobante } from '@/lib/facturacion/formato';
 import { generarPDF } from '@/lib/facturacion/pdf-generator';
@@ -33,6 +40,14 @@ export interface EmitirComprobanteBody {
   metodo_pago?: 'efectivo' | 'debito' | 'credito' | 'transferencia' | 'mixto';
   metodo_pago_detalle?: Record<string, number>;
   caja_id?: string;
+  /**
+   * Si es `false`, permite emitir con cantidades mayores al stock (venta contra stock).
+   * Ausente u otro valor: se exige stock suficiente (comportamiento habitual / facturación manual).
+   * El POS envía `false` cuando la preferencia "Bloquear ventas sin stock suficiente" está desactivada.
+   */
+  stock_bloqueante?: boolean;
+  /** Opción de cuotas/recargo configurada en Medios de pago (configuración del tenant). */
+  medio_pago_opcion_id?: string | null;
 }
 
 export type EmitirComprobanteSuccess = {
@@ -128,6 +143,123 @@ async function obtenerNumeroArchivado(
   }
 
   return (data?.numero ?? 0) - 1;
+}
+
+const CODIGOS_MEDIO_RAPIDO = new Set([
+  'efectivo',
+  'debito',
+  'credito',
+  'transferencia',
+  'mixto',
+]);
+
+const LABEL_MEDIO_RAPIDO: Record<string, string> = {
+  efectivo: 'Efectivo',
+  debito: 'Débito',
+  credito: 'Crédito',
+  transferencia: 'Transferencia',
+  mixto: 'Mixto',
+};
+
+async function cargarOpcionFinanciacion(
+  supabase: SupabaseClient<Database>,
+  tenantId: string,
+  opcionId: string | undefined | null,
+): Promise<OpcionFinanciacion | null> {
+  if (!opcionId || typeof opcionId !== 'string') return null;
+
+  const { data, error } = await supabase
+    .from('medio_pago_opcion')
+    .select('id, cuotas, recargo_porcentaje, medio_pago!inner ( nombre, activo, tenant_id )')
+    .eq('id', opcionId)
+    .maybeSingle();
+
+  if (error || !data) return null;
+
+  const medio = data.medio_pago as { nombre: string; activo: boolean; tenant_id: string };
+  if (medio.tenant_id !== tenantId || !medio.activo) return null;
+
+  return {
+    medioNombre: medio.nombre,
+    cuotas: data.cuotas,
+    recargo_porcentaje: Number(data.recargo_porcentaje),
+  };
+}
+
+async function cargarMapaMediosRapidos(
+  supabase: SupabaseClient<Database>,
+  tenantId: string,
+): Promise<Record<string, number>> {
+  const { data } = await supabase
+    .from('medio_pago_rapido')
+    .select('codigo, recargo_porcentaje')
+    .eq('tenant_id', tenantId);
+
+  const map: Record<string, number> = {};
+  for (const row of data ?? []) {
+    map[row.codigo] = Number(row.recargo_porcentaje);
+  }
+  return map;
+}
+
+function validarDetalleMixto(
+  raw: Record<string, unknown>,
+  totalEsperado: number,
+):
+  | { ok: true; detalle: Record<PartePagoMixto, number> }
+  | { ok: false; error: string } {
+  const detalle = {
+    efectivo: 0,
+    debito: 0,
+    credito: 0,
+    transferencia: 0,
+  } as Record<PartePagoMixto, number>;
+
+  for (const k of PARTES_PAGO_MIXTO) {
+    const v = raw[k];
+    const n = typeof v === 'number' ? v : parseFloat(String(v ?? ''));
+    if (!Number.isFinite(n) || n < 0) {
+      return { ok: false, error: `Monto inválido en ${k}` };
+    }
+    detalle[k] = Math.round(n * 100) / 100;
+  }
+
+  const suma = Math.round(
+    (detalle.efectivo + detalle.debito + detalle.credito + detalle.transferencia) * 100,
+  ) / 100;
+  if (Math.abs(suma - totalEsperado) > 0.02) {
+    return {
+      ok: false,
+      error: `La suma de montos del pago mixto (${suma.toFixed(2)}) debe coincidir con el total del comprobante (${totalEsperado.toFixed(2)}).`,
+    };
+  }
+
+  return { ok: true, detalle };
+}
+
+/** Recargo/descuento configurado para los botones rápidos del POS (sin opción de catálogo). */
+async function cargarFinanciacionRapida(
+  supabase: SupabaseClient<Database>,
+  tenantId: string,
+  metodo: string | undefined | null,
+): Promise<OpcionFinanciacion | null> {
+  if (!metodo || metodo === 'mixto' || !CODIGOS_MEDIO_RAPIDO.has(metodo)) return null;
+
+  const { data } = await supabase
+    .from('medio_pago_rapido')
+    .select('recargo_porcentaje')
+    .eq('tenant_id', tenantId)
+    .eq('codigo', metodo)
+    .maybeSingle();
+
+  const pct = data != null ? Number(data.recargo_porcentaje) : 0;
+  if (!Number.isFinite(pct) || Math.abs(pct) < 1e-9) return null;
+
+  return {
+    medioNombre: LABEL_MEDIO_RAPIDO[metodo] ?? metodo,
+    cuotas: 1,
+    recargo_porcentaje: pct,
+  };
 }
 
 async function liberarNumeroConflictuanteErrorArca(
@@ -280,15 +412,24 @@ export async function emitirComprobante(
 
   const productosMap = new Map(productos.map((p) => [p.id, p]));
 
+  const exigirStock = body.stock_bloqueante !== false;
+
   const esPresupuesto = tipoComprobante === 'presupuesto';
-  if (!esPresupuesto && !omitirMovimientosStock) {
+  if (!esPresupuesto && !omitirMovimientosStock && exigirStock) {
+    const cantidadPorProducto = new Map<string, number>();
     for (const item of body.items) {
-      const prod = productosMap.get(item.producto_id)!;
-      if (prod.stock_actual < item.cantidad) {
+      cantidadPorProducto.set(
+        item.producto_id,
+        (cantidadPorProducto.get(item.producto_id) ?? 0) + item.cantidad,
+      );
+    }
+    for (const [productoId, cantidadTotal] of cantidadPorProducto) {
+      const prod = productosMap.get(productoId)!;
+      if (prod.stock_actual < cantidadTotal) {
         return {
           ok: false,
           status: 400,
-          error: `Stock insuficiente para "${prod.nombre}". Disponible: ${prod.stock_actual}, solicitado: ${item.cantidad}`,
+          error: `Stock insuficiente para "${prod.nombre}". Disponible: ${prod.stock_actual}, solicitado: ${cantidadTotal}`,
         };
       }
     }
@@ -305,7 +446,64 @@ export async function emitirComprobante(
     };
   });
 
-  const importes = calcularImportes(itemsConIva, tipoComprobante, ivaFallback);
+  const importesMercaderia = calcularImportes(itemsConIva, tipoComprobante, ivaFallback);
+
+  const opcionCatalogo = await cargarOpcionFinanciacion(
+    supabase,
+    ctx.tenantId,
+    body.medio_pago_opcion_id,
+  );
+  if (body.medio_pago_opcion_id && !opcionCatalogo) {
+    return {
+      ok: false,
+      status: 400,
+      error: 'La opción de medio de pago no existe o está inactiva.',
+    };
+  }
+
+  let fin: ReturnType<typeof aplicarFinanciacion>;
+  let opcionFin: OpcionFinanciacion | null = null;
+  let esPagoMixto = false;
+
+  if (body.metodo_pago === 'mixto') {
+    const raw = body.metodo_pago_detalle;
+    if (!raw || typeof raw !== 'object' || Array.isArray(raw)) {
+      return {
+        ok: false,
+        status: 400,
+        error:
+          'Pago mixto: enviá metodo_pago_detalle con montos en efectivo, débito, crédito y transferencia (la suma debe igualar el total del comprobante).',
+      };
+    }
+    const val = validarDetalleMixto(raw as Record<string, unknown>, importesMercaderia.total);
+    if (!val.ok) {
+      return { ok: false, status: 400, error: val.error };
+    }
+    const pctMap = await cargarMapaMediosRapidos(supabase, ctx.tenantId);
+    fin = aplicarFinanciacionMixto(
+      importesMercaderia,
+      tipoComprobante,
+      val.detalle,
+      pctMap,
+    );
+    esPagoMixto = true;
+  } else {
+    opcionFin = opcionCatalogo;
+    if (!opcionFin && body.metodo_pago) {
+      opcionFin = await cargarFinanciacionRapida(supabase, ctx.tenantId, body.metodo_pago);
+    }
+    fin = aplicarFinanciacion(importesMercaderia, tipoComprobante, opcionFin);
+  }
+
+  const importes = fin.importes;
+
+  const mostrarFinanciacionEnComprobante = esPagoMixto || !!opcionFin;
+  const pdfFinanciacion = {
+    total_mercaderia: mostrarFinanciacionEnComprobante ? fin.totalMercaderia : null,
+    financiacion_monto: mostrarFinanciacionEnComprobante ? fin.financiacionMonto : null,
+    financiacion_porcentaje: mostrarFinanciacionEnComprobante ? fin.financiacionPorcentaje : null,
+    financiacion_descripcion: mostrarFinanciacionEnComprobante ? fin.financiacionDescripcion : null,
+  };
 
   const { data: moduloConfig } = await supabase
     .from('modulo_config')
@@ -377,9 +575,22 @@ export async function emitirComprobante(
       estado: 'emitido' as const,
       notas: body.notas || null,
       usuario_id: ctx.userId,
-      metodo_pago: body.metodo_pago ?? null,
+      metodo_pago: esPagoMixto
+        ? 'mixto'
+        : opcionCatalogo
+          ? opcionCatalogo.medioNombre
+          : (body.metodo_pago ?? null),
       metodo_pago_detalle: body.metodo_pago_detalle ?? null,
       caja_id: body.caja_id ?? null,
+      total_mercaderia: mostrarFinanciacionEnComprobante ? fin.totalMercaderia : null,
+      medio_pago_opcion_id: esPagoMixto
+        ? null
+        : opcionCatalogo
+          ? body.medio_pago_opcion_id ?? null
+          : null,
+      financiacion_monto: mostrarFinanciacionEnComprobante ? fin.financiacionMonto : null,
+      financiacion_porcentaje: mostrarFinanciacionEnComprobante ? fin.financiacionPorcentaje : null,
+      financiacion_descripcion: mostrarFinanciacionEnComprobante ? fin.financiacionDescripcion : null,
     })
     .select()
     .single();
@@ -407,8 +618,10 @@ export async function emitirComprobante(
     const esNotaCredito = tipoComprobante.startsWith('nota_credito');
     const tipoMov = esNotaCredito ? 'entrada' : 'salida';
 
+    const permitirNegativo = !exigirStock && tipoMov === 'salida';
+
     for (const item of body.items) {
-      const { error: movError } = await supabase.rpc('registrar_movimiento', {
+      const args: Parameters<SupabaseClient<Database>['rpc']>[1] = {
         p_tenant_id: ctx.tenantId,
         p_producto_id: item.producto_id,
         p_tipo: tipoMov,
@@ -417,10 +630,24 @@ export async function emitirComprobante(
         p_referencia_tipo: 'factura',
         p_referencia_id: comprobante.id,
         p_usuario_id: ctx.userId,
-      });
+        ...(permitirNegativo ? { p_permitir_stock_negativo: true } : {}),
+      };
+      const { error: movError } = await supabase.rpc('registrar_movimiento', args);
 
       if (movError) {
-        return { ok: false, status: 500, error: `Error de stock: ${movError.message}` };
+        const msg = movError.message ?? '';
+        if (
+          permitirNegativo &&
+          (msg.includes('Could not find the function') || msg.includes('schema cache'))
+        ) {
+          return {
+            ok: false,
+            status: 503,
+            error:
+              'La base de datos no tiene la versión actualizada de registrar_movimiento. En Supabase: SQL Editor → ejecutá el archivo supabase/migrations/035_registrar_movimiento_permitir_negativo.sql (o supabase db push). Luego en Ajustes del proyecto → API → «Reload schema».',
+          };
+        }
+        return { ok: false, status: 500, error: `Error de stock: ${msg}` };
       }
     }
   }
@@ -496,6 +723,7 @@ export async function emitirComprobante(
         notas: body.notas || null,
         cae: null,
         cae_vencimiento: null,
+        ...pdfFinanciacion,
       },
       itemsPDF,
     );
@@ -522,6 +750,7 @@ export async function emitirComprobante(
   let caeVencimiento: string | null = null;
 
   if (requiereArca && arcaConfig) {
+      const t99 = fin.arca.tributo99;
       const resultado = await solicitarCAE(
         supabase,
         arcaConfig,
@@ -531,10 +760,23 @@ export async function emitirComprobante(
           numero,
           fecha: comprobante.fecha,
           clienteCuitDni: cliente.cuit_dni || null,
-          importeTotal: importes.total,
-          importeNeto: importes.subtotal,
-          importeIVA: importes.iva_monto,
+          importeTotal: fin.arca.importeTotal,
+          importeNeto: fin.arca.importeNeto,
+          importeIVA: fin.arca.importeIVA,
           alicuotaIVA: importes.iva_porcentaje,
+          impTrib: fin.arca.impTrib,
+          tributos:
+            t99 != null
+              ? [
+                  {
+                    id: 99,
+                    descripcion: t99.descripcion,
+                    baseImp: t99.baseImp,
+                    alicuota: t99.alicuota,
+                    importe: t99.importe,
+                  },
+                ]
+              : undefined,
         },
         comprobante.id,
       );
@@ -594,6 +836,7 @@ export async function emitirComprobante(
               notas: body.notas || null,
               cae: resultado.cae,
               cae_vencimiento: resultado.caeVencimiento,
+              ...pdfFinanciacion,
             },
             itemsPDFCae,
           );

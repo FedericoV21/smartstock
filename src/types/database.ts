@@ -321,6 +321,99 @@ export type Database = {
           },
         ];
       };
+      medio_pago: {
+        Row: {
+          activo: boolean;
+          created_at: string;
+          id: string;
+          nombre: string;
+          orden: number;
+          tenant_id: string;
+          updated_at: string;
+        };
+        Insert: {
+          activo?: boolean;
+          created_at?: string;
+          id?: string;
+          nombre: string;
+          orden?: number;
+          tenant_id: string;
+          updated_at?: string;
+        };
+        Update: {
+          activo?: boolean;
+          created_at?: string;
+          id?: string;
+          nombre?: string;
+          orden?: number;
+          tenant_id?: string;
+          updated_at?: string;
+        };
+        Relationships: [
+          {
+            foreignKeyName: 'medio_pago_tenant_id_fkey';
+            columns: ['tenant_id'];
+            isOneToOne: false;
+            referencedRelation: 'tenant';
+            referencedColumns: ['id'];
+          },
+        ];
+      };
+      medio_pago_rapido: {
+        Row: {
+          codigo: string;
+          recargo_porcentaje: number;
+          tenant_id: string;
+        };
+        Insert: {
+          codigo: string;
+          recargo_porcentaje?: number;
+          tenant_id: string;
+        };
+        Update: {
+          codigo?: string;
+          recargo_porcentaje?: number;
+          tenant_id?: string;
+        };
+        Relationships: [
+          {
+            foreignKeyName: 'medio_pago_rapido_tenant_id_fkey';
+            columns: ['tenant_id'];
+            isOneToOne: false;
+            referencedRelation: 'tenant';
+            referencedColumns: ['id'];
+          },
+        ];
+      };
+      medio_pago_opcion: {
+        Row: {
+          cuotas: number;
+          id: string;
+          medio_pago_id: string;
+          recargo_porcentaje: number;
+        };
+        Insert: {
+          cuotas: number;
+          id?: string;
+          medio_pago_id: string;
+          recargo_porcentaje: number;
+        };
+        Update: {
+          cuotas?: number;
+          id?: string;
+          medio_pago_id?: string;
+          recargo_porcentaje?: number;
+        };
+        Relationships: [
+          {
+            foreignKeyName: 'medio_pago_opcion_medio_pago_id_fkey';
+            columns: ['medio_pago_id'];
+            isOneToOne: false;
+            referencedRelation: 'medio_pago';
+            referencedColumns: ['id'];
+          },
+        ];
+      };
       comprobante: {
         Row: {
           cae: string | null;
@@ -330,11 +423,15 @@ export type Database = {
           created_at: string;
           estado: Database['public']['Enums']['estado_comprobante'];
           fecha: string;
+          financiacion_descripcion: string | null;
+          financiacion_monto: number | null;
+          financiacion_porcentaje: number | null;
           id: string;
           iva_monto: number;
           iva_porcentaje: number;
           metodo_pago: string | null;
           metodo_pago_detalle: Json | null;
+          medio_pago_opcion_id: string | null;
           notas: string | null;
           numero: number;
           pdf_url: string | null;
@@ -342,6 +439,7 @@ export type Database = {
           tenant_id: string;
           tipo: Database['public']['Enums']['tipo_comprobante'];
           total: number;
+          total_mercaderia: number | null;
           updated_at: string;
           usuario_id: string | null;
         };
@@ -353,11 +451,15 @@ export type Database = {
           created_at?: string;
           estado?: Database['public']['Enums']['estado_comprobante'];
           fecha?: string;
+          financiacion_descripcion?: string | null;
+          financiacion_monto?: number | null;
+          financiacion_porcentaje?: number | null;
           id?: string;
           iva_monto?: number;
           iva_porcentaje?: number;
           metodo_pago?: string | null;
           metodo_pago_detalle?: Json | null;
+          medio_pago_opcion_id?: string | null;
           notas?: string | null;
           numero: number;
           pdf_url?: string | null;
@@ -365,6 +467,7 @@ export type Database = {
           tenant_id: string;
           tipo: Database['public']['Enums']['tipo_comprobante'];
           total?: number;
+          total_mercaderia?: number | null;
           updated_at?: string;
           usuario_id?: string | null;
         };
@@ -376,11 +479,15 @@ export type Database = {
           created_at?: string;
           estado?: Database['public']['Enums']['estado_comprobante'];
           fecha?: string;
+          financiacion_descripcion?: string | null;
+          financiacion_monto?: number | null;
+          financiacion_porcentaje?: number | null;
           id?: string;
           iva_monto?: number;
           iva_porcentaje?: number;
           metodo_pago?: string | null;
           metodo_pago_detalle?: Json | null;
+          medio_pago_opcion_id?: string | null;
           notas?: string | null;
           numero?: number;
           pdf_url?: string | null;
@@ -388,10 +495,18 @@ export type Database = {
           tenant_id?: string;
           tipo?: Database['public']['Enums']['tipo_comprobante'];
           total?: number;
+          total_mercaderia?: number | null;
           updated_at?: string;
           usuario_id?: string | null;
         };
         Relationships: [
+          {
+            foreignKeyName: 'comprobante_medio_pago_opcion_id_fkey';
+            columns: ['medio_pago_opcion_id'];
+            isOneToOne: false;
+            referencedRelation: 'medio_pago_opcion';
+            referencedColumns: ['id'];
+          },
           {
             foreignKeyName: 'comprobante_cliente_id_fkey';
             columns: ['cliente_id'];
@@ -1545,6 +1660,7 @@ export type Database = {
         Args: {
           p_cantidad: number;
           p_motivo?: string | null;
+          p_permitir_stock_negativo?: boolean;
           p_producto_id: string;
           p_referencia_id?: string | null;
           p_referencia_tipo?: Database['public']['Enums']['referencia_tipo'] | null;

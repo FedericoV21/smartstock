@@ -41,6 +41,14 @@ function mapAlicuotaIVAId(porcentaje: number): number {
   return mapa[porcentaje] ?? 5;
 }
 
+function escapeXmlText(s: string): string {
+  return String(s)
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;');
+}
+
 function desencriptarCampo(valorEncriptado: string): string {
   // Deno crypto for AES-256-CBC
   const key = Deno.env.get('ARCA_ENCRYPTION_KEY');
@@ -199,6 +207,33 @@ Deno.serve(async (req) => {
 
         const endpoints = getEndpoints(arcaConfig.ambiente);
 
+        const impTrib =
+          comp.financiacion_monto != null && Number(comp.financiacion_monto) > 0
+            ? Number(comp.financiacion_monto)
+            : 0;
+        const baseMerc =
+          comp.total_mercaderia != null
+            ? Number(comp.total_mercaderia)
+            : Number(comp.total) - impTrib;
+        const pctFin =
+          comp.financiacion_porcentaje != null ? Number(comp.financiacion_porcentaje) : 0;
+        const descTrib = escapeXmlText(
+          String(comp.financiacion_descripcion || 'Recargo financiero').slice(0, 200),
+        );
+        const tribBlock =
+          impTrib > 0
+            ? `
+            <ar:Tributos>
+              <ar:Tributo>
+                <ar:Id>99</ar:Id>
+                <ar:Desc>${descTrib}</ar:Desc>
+                <ar:BaseImp>${baseMerc.toFixed(2)}</ar:BaseImp>
+                <ar:Alic>${pctFin.toFixed(2)}</ar:Alic>
+                <ar:Importe>${impTrib.toFixed(2)}</ar:Importe>
+              </ar:Tributo>
+            </ar:Tributos>`
+            : '';
+
         const soapBody = `<?xml version="1.0" encoding="UTF-8"?>
 <soapenv:Envelope xmlns:soapenv="http://schemas.xmlsoap.org/soap/envelope/"
                   xmlns:ar="http://ar.gov.afip.dif.FEV1/">
@@ -228,9 +263,10 @@ Deno.serve(async (req) => {
             <ar:ImpNeto>${comp.subtotal.toFixed(2)}</ar:ImpNeto>
             <ar:ImpOpEx>0.00</ar:ImpOpEx>
             <ar:ImpIVA>${comp.iva_monto.toFixed(2)}</ar:ImpIVA>
-            <ar:ImpTrib>0.00</ar:ImpTrib>
+            <ar:ImpTrib>${impTrib.toFixed(2)}</ar:ImpTrib>
             <ar:MonId>PES</ar:MonId>
             <ar:MonCotiz>1</ar:MonCotiz>
+            ${tribBlock}
             <ar:Iva>
               <ar:AlicIva>
                 <ar:Id>${mapAlicuotaIVAId(comp.iva_porcentaje)}</ar:Id>

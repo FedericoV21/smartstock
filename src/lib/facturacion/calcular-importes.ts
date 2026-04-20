@@ -5,7 +5,7 @@ interface ItemComprobante {
   iva_porcentaje?: number | null;
 }
 
-interface Importes {
+export interface Importes {
   subtotal: number;
   iva_porcentaje: number;
   iva_monto: number;

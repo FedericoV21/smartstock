@@ -11,6 +11,7 @@ import {
   ChevronDown,
   Contact,
   CreditCard,
+  Wallet,
   FileSpreadsheet,
   FileText,
   FolderTree,
@@ -105,6 +106,14 @@ const NAV_ENTRIES: NavEntry[] = [
     icon: Settings,
     items: [
       { type: 'leaf', label: 'Mi negocio', href: '/configuracion', icon: Settings },
+      {
+        type: 'leaf',
+        label: 'Medios de pago',
+        href: '/configuracion/medios-de-pago',
+        icon: Wallet,
+        adminOnly: true,
+        modulo: 'facturador_simple',
+      },
       { type: 'leaf', label: 'Usuarios', href: '/configuracion/usuarios', icon: UsersRound, adminOnly: true },
       { type: 'leaf', label: 'ARCA / AFIP', href: '/configuracion/arca', icon: FileText, modulo: 'facturador_arca' },
       { type: 'leaf', label: 'Plan y módulos', href: '/configuracion/plan', icon: CreditCard },

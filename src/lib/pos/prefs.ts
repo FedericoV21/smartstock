@@ -39,6 +39,7 @@ export function normalizePosPrefs(raw: Partial<PosPrefs> | null | undefined): Po
   if (p.comprobantePredeterminado === 'factura' && !p.aceptaFactura) {
     p.comprobantePredeterminado = p.aceptaTicket ? 'ticket' : 'factura';
   }
+  if (typeof p.stockBloqueante !== 'boolean') p.stockBloqueante = DEFAULT_POS_PREFS.stockBloqueante;
   return p;
 }
 

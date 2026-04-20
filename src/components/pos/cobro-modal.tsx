@@ -1,6 +1,6 @@
 'use client';
 
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useMemo, useState } from 'react';
 
 import { printTicket } from '@/components/pos/ticket-termico';
 import { determinarTipoFactura } from '@/lib/facturacion/tipo-comprobante';
@@ -46,6 +46,8 @@ type MetodoPago = 'efectivo' | 'debito' | 'credito' | 'transferencia' | 'mixto';
 
 interface Props {
   items: CartItem[];
+  /** Si es true, el servidor rechaza ventas sin stock; si false, permite contra stock (preferencia POS). */
+  stockBloqueante: boolean;
   clienteId: string;
   clienteNombre: string;
   clienteCondicionIva: CondicionIVA;
@@ -69,6 +71,15 @@ interface Props {
 
 type Step = 'metodo' | 'pago' | 'procesando' | 'exito' | 'error';
 
+type MedioCatalogo = {
+  id: string;
+  nombre: string;
+  activo: boolean;
+  medio_pago_opcion: { id: string; cuotas: number; recargo_porcentaje: number }[];
+};
+
+type PagoTab = 'rapido' | 'planes';
+
 const METODOS: { id: MetodoPago; label: string }[] = [
   { id: 'efectivo', label: 'Efectivo' },
   { id: 'debito', label: 'Débito' },
@@ -77,8 +88,12 @@ const METODOS: { id: MetodoPago; label: string }[] = [
   { id: 'mixto', label: 'Mixto' },
 ];
 
+/** Partes del pago mixto (sin la opción UI «mixto»); los % vienen de atajos por medio. */
+const PARTES_MIXTO = ['efectivo', 'debito', 'credito', 'transferencia'] as const;
+
 export function CobroModal({
   items,
+  stockBloqueante,
   clienteId,
   clienteNombre,
   clienteCondicionIva,
@@ -99,6 +114,17 @@ export function CobroModal({
   onClose,
 }: Props) {
   const [step, setStep] = useState<Step>('metodo');
+  const [pagoTab, setPagoTab] = useState<PagoTab>('rapido');
+  const [mediosCatalogo, setMediosCatalogo] = useState<MedioCatalogo[]>([]);
+  const [rapidosPct, setRapidosPct] = useState<Record<MetodoPago, number>>({
+    efectivo: 0,
+    debito: 0,
+    credito: 0,
+    transferencia: 0,
+    mixto: 0,
+  });
+  const [medioCatalogoId, setMedioCatalogoId] = useState('');
+  const [opcionCatalogoId, setOpcionCatalogoId] = useState('');
   const [metodo, setMetodo] = useState<MetodoPago>('efectivo');
   const [recibido, setRecibido] = useState('');
   const [mixtoDetalle, setMixtoDetalle] = useState<Record<string, number>>({
@@ -114,20 +140,108 @@ export function CobroModal({
     pdfUrl: string | null;
   } | null>(null);
 
+  const opcionCatalogoSeleccionada = useMemo(() => {
+    if (pagoTab !== 'planes' || !opcionCatalogoId) return null;
+    for (const m of mediosCatalogo) {
+      const o = m.medio_pago_opcion?.find((x) => x.id === opcionCatalogoId);
+      if (o) return { ...o, medioNombre: m.nombre };
+    }
+    return null;
+  }, [pagoTab, opcionCatalogoId, mediosCatalogo]);
+
+  /** Ajuste neto por medios (monto parcial × % de cada medio). */
+  const ajusteMixtoProporcional = useMemo(() => {
+    let adj = 0;
+    for (const k of PARTES_MIXTO) {
+      const monto = mixtoDetalle[k] ?? 0;
+      const pct = rapidosPct[k] ?? 0;
+      adj += (monto * pct) / 100;
+    }
+    return Math.round(adj * 100) / 100;
+  }, [mixtoDetalle, rapidosPct]);
+
+  const totalCobro = useMemo(() => {
+    if (pagoTab === 'planes' && opcionCatalogoSeleccionada) {
+      const pct = opcionCatalogoSeleccionada.recargo_porcentaje;
+      return Math.round((total + (total * pct) / 100) * 100) / 100;
+    }
+    if (pagoTab === 'rapido') {
+      if (metodo === 'mixto') {
+        return Math.round((total + ajusteMixtoProporcional) * 100) / 100;
+      }
+      const pct = rapidosPct[metodo] ?? 0;
+      return Math.round((total + (total * pct) / 100) * 100) / 100;
+    }
+    return total;
+  }, [total, pagoTab, opcionCatalogoSeleccionada, rapidosPct, metodo, ajusteMixtoProporcional]);
+
+  useEffect(() => {
+    if (step !== 'metodo') return;
+    void fetch('/api/configuracion/medios-de-pago')
+      .then((r) => r.json())
+      .then(
+        (j: {
+          medios?: MedioCatalogo[];
+          rapidos?: Partial<Record<MetodoPago, number>>;
+        }) => {
+          setMediosCatalogo(
+            (j.medios ?? []).filter((m) => m.activo && (m.medio_pago_opcion?.length ?? 0) > 0),
+          );
+          if (j.rapidos) {
+            setRapidosPct({
+              efectivo: j.rapidos.efectivo ?? 0,
+              debito: j.rapidos.debito ?? 0,
+              credito: j.rapidos.credito ?? 0,
+              transferencia: j.rapidos.transferencia ?? 0,
+              mixto: j.rapidos.mixto ?? 0,
+            });
+          }
+        },
+      )
+      .catch(() => {
+        setMediosCatalogo([]);
+      });
+  }, [step]);
+
+  useEffect(() => {
+    if (!medioCatalogoId) {
+      setOpcionCatalogoId('');
+      return;
+    }
+    const m = mediosCatalogo.find((x) => x.id === medioCatalogoId);
+    if (!m?.medio_pago_opcion?.length) {
+      setOpcionCatalogoId('');
+      return;
+    }
+    setOpcionCatalogoId((prev) =>
+      m.medio_pago_opcion.some((o) => o.id === prev) ? prev : m.medio_pago_opcion[0].id,
+    );
+  }, [medioCatalogoId, mediosCatalogo]);
+
+  const recibidoNum = parseFloat(recibido) || 0;
   const vuelto =
-    metodo === 'efectivo' && parseFloat(recibido) > total
-      ? Math.round((parseFloat(recibido) - total) * 100) / 100
+    metodo === 'efectivo' && recibidoNum > totalCobro
+      ? Math.round((recibidoNum - totalCobro) * 100) / 100
       : 0;
 
-  const mixtoTotal = Object.values(mixtoDetalle).reduce((s, v) => s + v, 0);
-  const mixtoCompleto = Math.abs(mixtoTotal - total) < 0.01;
+  const faltaEfectivo =
+    recibidoNum < totalCobro ? Math.round((totalCobro - recibidoNum) * 100) / 100 : 0;
+
+  const mixtoTotal = PARTES_MIXTO.reduce((s, k) => s + (mixtoDetalle[k] ?? 0), 0);
+  const mixtoCompleto = Math.abs(mixtoTotal - total) < 0.02;
+  const faltaMixto =
+    mixtoTotal < total - 0.02 ? Math.round((total - mixtoTotal) * 100) / 100 : 0;
+  const excedeMixto =
+    mixtoTotal > total + 0.02 ? Math.round((mixtoTotal - total) * 100) / 100 : 0;
 
   const canConfirm =
-    metodo === 'efectivo'
-      ? parseFloat(recibido) >= total
-      : metodo === 'mixto'
-        ? mixtoCompleto
-        : true;
+    pagoTab === 'planes'
+      ? Boolean(opcionCatalogoId)
+      : metodo === 'efectivo'
+        ? recibidoNum >= totalCobro
+        : metodo === 'mixto'
+          ? mixtoCompleto
+          : true;
 
   const confirmar = useCallback(async () => {
     setStep('procesando');
@@ -145,11 +259,16 @@ export function CobroModal({
         cantidad: it.cantidad,
         precio_unitario: it.producto.precio_venta,
       })),
-      metodo_pago: metodo,
+      stock_bloqueante: stockBloqueante,
     };
 
-    if (metodo === 'mixto') {
-      body.metodo_pago_detalle = mixtoDetalle;
+    if (pagoTab === 'planes' && opcionCatalogoId) {
+      body.medio_pago_opcion_id = opcionCatalogoId;
+    } else {
+      body.metodo_pago = metodo;
+      if (metodo === 'mixto') {
+        body.metodo_pago_detalle = mixtoDetalle;
+      }
     }
 
     try {
@@ -186,8 +305,11 @@ export function CobroModal({
     metodo,
     mixtoDetalle,
     onSuccess,
+    stockBloqueante,
     tenantCondicionIva,
     tipoComprobante,
+    pagoTab,
+    opcionCatalogoId,
   ]);
 
   // Escape to close
@@ -235,28 +357,133 @@ export function CobroModal({
                 </div>
               )}
               <div className="flex justify-between text-2xl font-bold border-t pt-3">
-                <span>Total</span>
-                <span>{formatCurrency(total)}</span>
+                <span>
+                  {pagoTab === 'planes' && opcionCatalogoSeleccionada
+                    ? 'Total a cobrar'
+                    : pagoTab === 'rapido' && Math.abs(totalCobro - total) > 0.001
+                      ? 'Total a cobrar'
+                      : 'Total'}
+                </span>
+                <span>{formatCurrency(totalCobro)}</span>
+              </div>
+              {pagoTab === 'planes' && opcionCatalogoSeleccionada && Math.abs(totalCobro - total) > 0.001 ? (
+                <p className="text-xs text-muted-foreground text-right">
+                  Mercadería {formatCurrency(total)} · ajuste medio de pago incluido
+                </p>
+              ) : null}
+              {pagoTab === 'rapido' && metodo !== 'mixto' && Math.abs((rapidosPct[metodo] ?? 0)) > 1e-9 ? (
+                <p className="text-xs text-muted-foreground text-right">
+                  Mercadería {formatCurrency(total)} · atajo {METODOS.find((x) => x.id === metodo)?.label}:{' '}
+                  {(rapidosPct[metodo] ?? 0) >= 0 ? '+' : ''}
+                  {rapidosPct[metodo]}%
+                </p>
+              ) : null}
+              {pagoTab === 'rapido' && metodo === 'mixto' ? (
+                <p className="text-xs text-muted-foreground text-right">
+                  Mercadería {formatCurrency(total)} — en el siguiente paso asignás montos; el % de cada medio
+                  se aplica solo al monto de ese medio.
+                </p>
+              ) : null}
+
+              <div className="flex rounded-lg border p-1 bg-muted/40">
+                <button
+                  type="button"
+                  className={cn(
+                    'flex-1 rounded-md py-2 text-sm font-medium transition-colors',
+                    pagoTab === 'rapido' ? 'bg-background shadow-sm' : 'text-muted-foreground',
+                  )}
+                  onClick={() => setPagoTab('rapido')}
+                >
+                  Rápido
+                </button>
+                <button
+                  type="button"
+                  className={cn(
+                    'flex-1 rounded-md py-2 text-sm font-medium transition-colors',
+                    pagoTab === 'planes' ? 'bg-background shadow-sm' : 'text-muted-foreground',
+                  )}
+                  onClick={() => setPagoTab('planes')}
+                >
+                  Planes (cuotas)
+                </button>
               </div>
 
-              <p className="text-sm text-muted-foreground">Método de pago</p>
-              <div className="grid grid-cols-3 gap-2">
-                {METODOS.map((m) => (
-                  <Button
-                    key={m.id}
-                    type="button"
-                    variant={metodo === m.id ? 'default' : 'outline'}
-                    className="h-14 text-base"
-                    onClick={() => setMetodo(m.id)}
-                  >
-                    {m.label}
-                  </Button>
-                ))}
-              </div>
+              {pagoTab === 'rapido' ? (
+                <>
+                  <p className="text-sm text-muted-foreground">Método de pago</p>
+                  <div className="grid grid-cols-3 gap-2">
+                    {METODOS.map((m) => (
+                      <Button
+                        key={m.id}
+                        type="button"
+                        variant={metodo === m.id ? 'default' : 'outline'}
+                        className="h-14 text-base"
+                        onClick={() => setMetodo(m.id)}
+                      >
+                        {m.label}
+                      </Button>
+                    ))}
+                  </div>
+                </>
+              ) : (
+                <div className="space-y-3">
+                  <label className="grid gap-1 text-sm">
+                    <span className="text-muted-foreground">Medio configurado</span>
+                    <select
+                      value={medioCatalogoId}
+                      onChange={(e) => {
+                        setMedioCatalogoId(e.target.value);
+                        setOpcionCatalogoId('');
+                      }}
+                      className="flex h-11 w-full rounded-md border border-input bg-transparent px-3 py-1 text-sm"
+                    >
+                      <option value="">Seleccionar…</option>
+                      {mediosCatalogo.map((m) => (
+                        <option key={m.id} value={m.id}>
+                          {m.nombre}
+                        </option>
+                      ))}
+                    </select>
+                  </label>
+                  {medioCatalogoId ? (
+                    <label className="grid gap-1 text-sm">
+                      <span className="text-muted-foreground">Cuotas / recargo</span>
+                      <select
+                        value={opcionCatalogoId}
+                        onChange={(e) => setOpcionCatalogoId(e.target.value)}
+                        className="flex h-11 w-full rounded-md border border-input bg-transparent px-3 py-1 text-sm"
+                      >
+                        <option value="">Elegir…</option>
+                        {(mediosCatalogo.find((x) => x.id === medioCatalogoId)?.medio_pago_opcion ?? []).map(
+                          (o) => (
+                            <option key={o.id} value={o.id}>
+                              {o.cuotas === 1
+                                ? 'Contado'
+                                : `${o.cuotas} cuotas`}{' '}
+                              ({o.recargo_porcentaje >= 0 ? '+' : ''}
+                              {o.recargo_porcentaje}%)
+                            </option>
+                          ),
+                        )}
+                      </select>
+                    </label>
+                  ) : (
+                    <p className="text-xs text-muted-foreground">
+                      Configurá medios en{' '}
+                      <span className="font-medium text-foreground">Configuración → Medios de pago</span>.
+                    </p>
+                  )}
+                </div>
+              )}
 
               <Button
                 className="w-full h-14 text-lg font-bold mt-2"
+                disabled={pagoTab === 'planes' && (!medioCatalogoId || !opcionCatalogoId)}
                 onClick={() => {
+                  if (pagoTab === 'planes') {
+                    void confirmar();
+                    return;
+                  }
                   if (metodo === 'efectivo' || metodo === 'mixto') {
                     setStep('pago');
                   } else {
@@ -264,9 +491,11 @@ export function CobroModal({
                   }
                 }}
               >
-                {metodo === 'efectivo' || metodo === 'mixto'
-                  ? 'Continuar'
-                  : 'Confirmar cobro'}
+                {pagoTab === 'planes'
+                  ? 'Confirmar cobro'
+                  : metodo === 'efectivo' || metodo === 'mixto'
+                    ? 'Continuar'
+                    : 'Confirmar cobro'}
               </Button>
             </div>
           )}
@@ -276,7 +505,7 @@ export function CobroModal({
             <div className="space-y-4">
               <div className="flex justify-between text-2xl font-bold">
                 <span>Total</span>
-                <span>{formatCurrency(total)}</span>
+                <span>{formatCurrency(totalCobro)}</span>
               </div>
 
               <label className="grid gap-1">
@@ -295,6 +524,13 @@ export function CobroModal({
                   }}
                 />
               </label>
+
+              {faltaEfectivo > 0 && (
+                <div className="flex justify-between text-xl font-bold text-amber-600 dark:text-amber-400">
+                  <span>Falta</span>
+                  <span>{formatCurrency(faltaEfectivo)}</span>
+                </div>
+              )}
 
               {vuelto > 0 && (
                 <div className="flex justify-between text-2xl font-bold text-green-600">
@@ -321,13 +557,24 @@ export function CobroModal({
           {step === 'pago' && metodo === 'mixto' && (
             <div className="space-y-4">
               <div className="flex justify-between text-xl font-bold">
-                <span>Total</span>
-                <span>{formatCurrency(total)}</span>
+                <span>Total a cobrar</span>
+                <span>{formatCurrency(totalCobro)}</span>
               </div>
+              {Math.abs(ajusteMixtoProporcional) > 0.001 ? (
+                <p className="text-xs text-muted-foreground text-right">
+                  Mercadería {formatCurrency(total)}
+                  {ajusteMixtoProporcional >= 0 ? ' · ajuste neto +' : ' · ajuste neto '}
+                  {formatCurrency(ajusteMixtoProporcional)}
+                </p>
+              ) : (
+                <p className="text-xs text-muted-foreground text-right">
+                  Mercadería {formatCurrency(total)} — sin ajuste por medios
+                </p>
+              )}
 
-              <p className="text-sm text-muted-foreground">Distribuir el pago entre métodos:</p>
+              <p className="text-sm text-muted-foreground">Distribuir el pago entre métodos (suma = mercadería):</p>
 
-              {(['efectivo', 'debito', 'credito', 'transferencia'] as const).map((m) => (
+              {PARTES_MIXTO.map((m) => (
                 <label key={m} className="flex items-center gap-3">
                   <span className="text-sm w-28 capitalize">{m}</span>
                   <Input
@@ -353,11 +600,25 @@ export function CobroModal({
                   mixtoCompleto ? 'text-green-600' : 'text-amber-600',
                 )}
               >
-                <span>Suma</span>
+                <span>Suma (debe igualar mercadería)</span>
                 <span>
                   {formatCurrency(mixtoTotal)} / {formatCurrency(total)}
                 </span>
               </div>
+
+              {faltaMixto > 0 && (
+                <div className="flex justify-between text-lg font-bold text-amber-600 dark:text-amber-400">
+                  <span>Falta</span>
+                  <span>{formatCurrency(faltaMixto)}</span>
+                </div>
+              )}
+
+              {excedeMixto > 0 && (
+                <div className="flex justify-between text-sm font-medium text-destructive">
+                  <span>Excede el total</span>
+                  <span>{formatCurrency(excedeMixto)}</span>
+                </div>
+              )}
 
               <div className="flex gap-2">
                 <Button variant="outline" onClick={() => setStep('metodo')} className="flex-1">

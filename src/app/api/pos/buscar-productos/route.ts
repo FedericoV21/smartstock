@@ -1,18 +1,27 @@
 import { NextResponse, type NextRequest } from 'next/server';
 
 import { getTenantSession } from '@/lib/api/tenant-session';
-import { moduloGuard } from '@/lib/modulos/guard';
 
-const MAX_RESULTS = 25;
+const MAX_RESULTS = 40;
 
 export async function GET(request: NextRequest) {
-  const guard = await moduloGuard('facturador_pos');
-  if (!guard.allowed) return guard.response;
-
   const session = await getTenantSession();
   if ('error' in session) return session.error;
 
   const { supabase, tenantId } = session;
+
+  const { data: modCfg } = await supabase
+    .from('modulo_config')
+    .select('facturador_pos')
+    .eq('tenant_id', tenantId)
+    .maybeSingle();
+
+  if (!modCfg?.facturador_pos) {
+    return NextResponse.json(
+      { error: "El módulo 'facturador_pos' no está habilitado para tu plan." },
+      { status: 403 },
+    );
+  }
 
   const { searchParams } = new URL(request.url);
   const raw = searchParams.get('q')?.trim() ?? '';
