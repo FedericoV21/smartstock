@@ -24,6 +24,7 @@ export async function GET(request: NextRequest) {
       '*, cliente:cliente_id(nombre, razon_social), usuario:usuario_id(nombre, apellido)',
       { count: 'exact' },
     )
+    .order('numero_orden', { ascending: false })
     .order('fecha', { ascending: false })
     .order('numero', { ascending: false })
     .range(offset, offset + porPagina - 1);
@@ -38,8 +39,38 @@ export async function GET(request: NextRequest) {
     return NextResponse.json({ error: error.message }, { status: 500 });
   }
 
+  const rows = data ?? [];
+  const facIds = [
+    ...new Set(
+      rows
+        .map((c) => (c as { fiscalizado_por_id?: string | null }).fiscalizado_por_id)
+        .filter((id): id is string => typeof id === 'string' && id.length > 0),
+    ),
+  ];
+
+  let facMap = new Map<string, { id: string; tipo: string; numero: number }>();
+  if (facIds.length > 0) {
+    const { data: facs, error: facErr } = await session.supabase
+      .from('comprobante')
+      .select('id, tipo, numero')
+      .in('id', facIds);
+    if (!facErr && facs) {
+      facMap = new Map(facs.map((f) => [f.id, f]));
+    }
+  }
+
+  const comprobantes = rows.map((c) => {
+    const row = c as { fiscalizado_por_id?: string | null };
+    const fid = row.fiscalizado_por_id;
+    return {
+      ...c,
+      factura_fiscal:
+        fid && facMap.has(fid) ? facMap.get(fid)! : null,
+    };
+  });
+
   return NextResponse.json({
-    comprobantes: data,
+    comprobantes,
     total: count,
     pagina,
     por_pagina: porPagina,

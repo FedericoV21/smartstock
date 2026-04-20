@@ -32,6 +32,49 @@ const SCAN_CHAR_THRESHOLD_MS = 30;
 const DEBOUNCE_SAME_CODE_MS = 300;
 const REFOCUS_INTERVAL_MS = 500;
 
+/** No forzar foco al lector mientras el usuario interactúa con otro control (descuento, cantidades, selects, etc.). */
+function shouldDeferScanRefocus(
+  active: Element | null,
+  scanInput: HTMLInputElement | null,
+): boolean {
+  if (!active || active === document.body || active === scanInput) return false;
+
+  const tag = active.tagName;
+  if (tag === 'INPUT' || tag === 'TEXTAREA' || tag === 'SELECT' || tag === 'BUTTON') {
+    return true;
+  }
+  if (
+    active instanceof HTMLInputElement ||
+    active instanceof HTMLTextAreaElement ||
+    active instanceof HTMLSelectElement ||
+    active instanceof HTMLButtonElement
+  ) {
+    return true;
+  }
+
+  // Base UI Field/Input y popup de Select (portal fuera del panel de resumen)
+  if (active.closest('[data-slot="input"]')) return true;
+  if (active.closest('[data-slot="select-content"]')) return true;
+  if (active.closest('[data-slot="select-item"]')) return true;
+
+  const role = active.getAttribute('role');
+  if (
+    role === 'combobox' ||
+    role === 'listbox' ||
+    role === 'option' ||
+    role === 'menu' ||
+    role === 'menuitem' ||
+    role === 'menuitemradio' ||
+    role === 'menuitemcheckbox'
+  ) {
+    return true;
+  }
+  if (active.closest('[role="listbox"]') || active.closest('[role="menu"]')) {
+    return true;
+  }
+  return false;
+}
+
 export const BarcodeInput = forwardRef<BarcodeInputRef, BarcodeInputProps>(
   function BarcodeInput(
     {
@@ -75,9 +118,10 @@ export const BarcodeInput = forwardRef<BarcodeInputRef, BarcodeInputProps>(
     useEffect(() => {
       if (!autoFocus || disabled || pauseRefocus) return;
       const id = setInterval(() => {
-        if (document.activeElement !== inputRef.current) {
-          inputRef.current?.focus();
-        }
+        const scan = inputRef.current;
+        if (document.activeElement === scan) return;
+        if (shouldDeferScanRefocus(document.activeElement, scan)) return;
+        scan?.focus();
       }, REFOCUS_INTERVAL_MS);
       return () => clearInterval(id);
     }, [autoFocus, disabled, pauseRefocus]);

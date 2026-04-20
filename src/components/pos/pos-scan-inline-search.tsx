@@ -267,6 +267,7 @@ export const PosScanInlineSearch = forwardRef<PosScanInlineSearchRef, PosScanInl
             disabled={disabled}
             pauseRefocus={pauseRefocus}
             placeholder={placeholder}
+            className="focus-visible:border-[color:var(--brand-primary)] focus-visible:ring-2 focus-visible:ring-[color:var(--brand-primary)]/35 focus-visible:ring-offset-2"
           />
         </div>
 
@@ -305,7 +306,9 @@ export const PosScanInlineSearch = forwardRef<PosScanInlineSearchRef, PosScanInl
                     onMouseEnter={() => setHighlight(i)}
                     className={cn(
                       'flex w-full flex-col gap-0.5 border-b px-3 py-2 text-left text-sm last:border-0',
-                      i === highlight ? 'bg-muted' : 'hover:bg-muted/60',
+                      i === highlight
+                        ? 'border-l-2 border-l-[color:var(--brand-primary)] bg-[color:var(--brand-tint)]'
+                        : 'hover:bg-muted/60',
                     )}
                   >
                     <div className="flex items-baseline justify-between gap-2">

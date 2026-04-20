@@ -423,6 +423,7 @@ export type Database = {
           created_at: string;
           estado: Database['public']['Enums']['estado_comprobante'];
           fecha: string;
+          fiscalizado_por_id: string | null;
           financiacion_descripcion: string | null;
           financiacion_monto: number | null;
           financiacion_porcentaje: number | null;
@@ -432,8 +433,11 @@ export type Database = {
           metodo_pago: string | null;
           metodo_pago_detalle: Json | null;
           medio_pago_opcion_id: string | null;
+          mp_point_intent_id: string | null;
+          mp_point_payment_id: number | null;
           notas: string | null;
           numero: number;
+          numero_orden: number;
           pdf_url: string | null;
           subtotal: number;
           tenant_id: string;
@@ -451,6 +455,7 @@ export type Database = {
           created_at?: string;
           estado?: Database['public']['Enums']['estado_comprobante'];
           fecha?: string;
+          fiscalizado_por_id?: string | null;
           financiacion_descripcion?: string | null;
           financiacion_monto?: number | null;
           financiacion_porcentaje?: number | null;
@@ -460,8 +465,11 @@ export type Database = {
           metodo_pago?: string | null;
           metodo_pago_detalle?: Json | null;
           medio_pago_opcion_id?: string | null;
+          mp_point_intent_id?: string | null;
+          mp_point_payment_id?: number | null;
           notas?: string | null;
           numero: number;
+          numero_orden: number;
           pdf_url?: string | null;
           subtotal?: number;
           tenant_id: string;
@@ -479,6 +487,7 @@ export type Database = {
           created_at?: string;
           estado?: Database['public']['Enums']['estado_comprobante'];
           fecha?: string;
+          fiscalizado_por_id?: string | null;
           financiacion_descripcion?: string | null;
           financiacion_monto?: number | null;
           financiacion_porcentaje?: number | null;
@@ -488,8 +497,11 @@ export type Database = {
           metodo_pago?: string | null;
           metodo_pago_detalle?: Json | null;
           medio_pago_opcion_id?: string | null;
+          mp_point_intent_id?: string | null;
+          mp_point_payment_id?: number | null;
           notas?: string | null;
           numero?: number;
+          numero_orden?: number;
           pdf_url?: string | null;
           subtotal?: number;
           tenant_id?: string;
@@ -500,6 +512,13 @@ export type Database = {
           usuario_id?: string | null;
         };
         Relationships: [
+          {
+            foreignKeyName: 'comprobante_fiscalizado_por_id_fkey';
+            columns: ['fiscalizado_por_id'];
+            isOneToOne: false;
+            referencedRelation: 'comprobante';
+            referencedColumns: ['id'];
+          },
           {
             foreignKeyName: 'comprobante_medio_pago_opcion_id_fkey';
             columns: ['medio_pago_opcion_id'];
@@ -972,6 +991,47 @@ export type Database = {
             columns: ['usuario_id'];
             isOneToOne: false;
             referencedRelation: 'usuario';
+            referencedColumns: ['id'];
+          },
+        ];
+      };
+      mp_point_config: {
+        Row: {
+          access_token: string | null;
+          created_at: string;
+          device_id: string | null;
+          habilitado: boolean;
+          id: string;
+          tenant_id: string;
+          updated_at: string;
+          webhook_secret: string | null;
+        };
+        Insert: {
+          access_token?: string | null;
+          created_at?: string;
+          device_id?: string | null;
+          habilitado?: boolean;
+          id?: string;
+          tenant_id: string;
+          updated_at?: string;
+          webhook_secret?: string | null;
+        };
+        Update: {
+          access_token?: string | null;
+          created_at?: string;
+          device_id?: string | null;
+          habilitado?: boolean;
+          id?: string;
+          tenant_id?: string;
+          updated_at?: string;
+          webhook_secret?: string | null;
+        };
+        Relationships: [
+          {
+            foreignKeyName: 'mp_point_config_tenant_id_fkey';
+            columns: ['tenant_id'];
+            isOneToOne: true;
+            referencedRelation: 'tenant';
             referencedColumns: ['id'];
           },
         ];
@@ -1700,6 +1760,12 @@ export type Database = {
         };
         Returns: number;
       };
+      siguiente_numero_orden: {
+        Args: {
+          p_tenant_id: string;
+        };
+        Returns: number;
+      };
     };
     Enums: {
       arca_ambiente: 'homologacion' | 'produccion';
@@ -1708,7 +1774,13 @@ export type Database = {
         | 'monotributista'
         | 'exento'
         | 'consumidor_final';
-      estado_comprobante: 'borrador' | 'emitido' | 'pendiente_arca' | 'error_arca' | 'anulado';
+      estado_comprobante:
+        | 'borrador'
+        | 'emitido'
+        | 'pendiente_arca'
+        | 'pendiente_posnet'
+        | 'error_arca'
+        | 'anulado';
       estado_lista_precios:
         | 'pendiente'
         | 'analizada'

@@ -7,6 +7,7 @@ import { Button } from '@/components/ui/button';
 interface ShortcutHandlers {
   onCobrar: () => void;
   onBuscarProducto: () => void;
+  onFocoDescuento?: () => void;
   onCambiarCliente: () => void;
   onCancelarVenta: () => void;
   onCambiarTipo: () => void;
@@ -16,6 +17,7 @@ interface ShortcutHandlers {
 const SHORTCUTS = [
   { key: 'F2', desc: 'Cobrar / abrir modal de pago' },
   { key: 'F3', desc: 'Foco en el campo de escaneo / búsqueda' },
+  { key: 'F9', desc: 'Foco en el descuento del resumen' },
   { key: 'F4', desc: 'Cambiar cliente' },
   { key: 'F8', desc: 'Cancelar venta' },
   { key: 'F12', desc: 'Cambiar tipo de comprobante' },
@@ -46,6 +48,12 @@ export function usePosKeyboardShortcuts(handlers: ShortcutHandlers) {
         case 'F3':
           e.preventDefault();
           handlers.onBuscarProducto();
+          break;
+        case 'F9':
+          if (handlers.onFocoDescuento) {
+            e.preventDefault();
+            handlers.onFocoDescuento();
+          }
           break;
         case 'F4':
           e.preventDefault();

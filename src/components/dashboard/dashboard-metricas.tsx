@@ -28,13 +28,16 @@ function MetricCard({
   return (
     <div
       className={cn(
-        'flex flex-col gap-3 rounded-xl border bg-card p-5 shadow-sm',
+        'flex flex-col gap-3 rounded-xl border border-t-[3px] border-t-[color:var(--brand-primary)] bg-card p-5 shadow-sm',
         className,
       )}
     >
       <div className="flex items-start justify-between gap-2">
         <p className="text-sm font-medium text-muted-foreground">{title}</p>
-        <Icon className="h-5 w-5 shrink-0 text-muted-foreground" aria-hidden />
+        <Icon
+          className="h-5 w-5 shrink-0 text-[color:var(--brand-accent)]"
+          aria-hidden
+        />
       </div>
       <p className="text-2xl font-semibold tracking-tight tabular-nums">{value}</p>
     </div>

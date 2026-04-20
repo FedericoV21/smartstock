@@ -21,7 +21,7 @@ export async function GET(
   const { data, error } = await session.supabase
     .from('comprobante')
     .select(
-      '*, cliente:cliente_id(nombre, razon_social, cuit_dni, condicion_iva), usuario:usuario_id(nombre, apellido), items:comprobante_item(id, cantidad, precio_unitario, subtotal, producto:producto_id(nombre, codigo, iva_porcentaje))',
+      '*, cliente:cliente_id(nombre, razon_social, cuit_dni, condicion_iva, direccion), usuario:usuario_id(nombre, apellido), items:comprobante_item(id, producto_id, cantidad, precio_unitario, subtotal, precio_costo, producto:producto_id(nombre, codigo, iva_porcentaje, stock_actual, activo))',
     )
     .eq('id', id)
     .maybeSingle();
@@ -83,6 +83,8 @@ export async function GET(
         return {
           cantidad: item.cantidad,
           descripcion: item.producto?.nombre ?? 'Producto',
+          codigo: item.producto?.codigo ?? null,
+          unidad_medida: 'unidades',
           precio_unitario: item.precio_unitario,
           subtotal: item.subtotal,
           iva_porcentaje: rate,
@@ -104,7 +106,7 @@ export async function GET(
           razon_social: data.cliente?.razon_social ?? null,
           cuit_dni: data.cliente?.cuit_dni ?? null,
           condicion_iva: data.cliente?.condicion_iva ?? 'consumidor_final',
-          direccion: null,
+          direccion: data.cliente?.direccion ?? null,
         },
         {
           tipo: data.tipo,
@@ -117,6 +119,10 @@ export async function GET(
           notas: data.notas,
           cae: data.cae,
           cae_vencimiento: data.cae_vencimiento,
+          total_mercaderia: data.total_mercaderia,
+          financiacion_monto: data.financiacion_monto,
+          financiacion_porcentaje: data.financiacion_porcentaje,
+          financiacion_descripcion: data.financiacion_descripcion,
         },
         itemsPdf,
       );
@@ -182,9 +188,21 @@ export async function GET(
     }
   }
 
+  let facturaFiscal: { id: string; tipo: string; numero: number } | null = null;
+  const fid = (data as { fiscalizado_por_id?: string | null }).fiscalizado_por_id;
+  if (fid) {
+    const { data: fac } = await session.supabase
+      .from('comprobante')
+      .select('id, tipo, numero')
+      .eq('id', fid)
+      .maybeSingle();
+    if (fac) facturaFiscal = fac;
+  }
+
   return NextResponse.json({
     ...data,
     punto_de_venta: puntoDeVenta,
     pdf_url: pdfUrl,
+    factura_fiscal: facturaFiscal,
   });
 }

@@ -76,7 +76,7 @@ export async function POST(request: Request) {
 
   const { data: existing } = await session.supabase
     .from('arca_config')
-    .select('id')
+    .select('id, ambiente')
     .eq('tenant_id', session.tenantId)
     .maybeSingle();
 
@@ -102,6 +102,12 @@ export async function POST(request: Request) {
   }
   if (!isKeepKey && body.clave_privada_pem) {
     upsertData.clave_privada_pem = encriptarCampo(body.clave_privada_pem);
+  }
+
+  if (existing && existing.ambiente !== body.ambiente) {
+    upsertData.ticket_acceso = null;
+    upsertData.ticket_sign = null;
+    upsertData.ticket_expiracion = null;
   }
 
   const { error } = await session.supabase

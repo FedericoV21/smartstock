@@ -29,7 +29,102 @@ type Cliente = {
   nombre: string;
   razon_social: string | null;
   condicion_iva: string | null;
+  cuit_dni?: string | null;
 };
+
+/** Cliente tal como quedó en el ticket (solo lectura al fiscalizar). */
+type TicketClienteSnapshot = {
+  id: string | null;
+  titulo: string;
+  detalle: string | null;
+};
+
+type TicketPagoVista = {
+  lineas: string[];
+  totalTicket: number | null;
+  medioPagoOpcionId: string | null;
+};
+
+function buildTicketPagoVista(raw: Record<string, unknown>): TicketPagoVista {
+  const lineas: string[] = [];
+  const mp = raw.metodo_pago;
+  if (mp) lineas.push(`Registrado en ticket: ${String(mp)}`);
+  const fd = raw.financiacion_descripcion;
+  if (fd) lineas.push(String(fd));
+  const fp = raw.financiacion_porcentaje;
+  if (fp != null && Number(fp) !== 0) {
+    const n = Number(fp);
+    lineas.push(
+      n >= 0 ? `Recargo sobre mercadería: ${n}%` : `Descuento: ${Math.abs(n)}%`,
+    );
+  }
+  const fm = raw.financiacion_monto;
+  if (fm != null && Number(fm) !== 0) {
+    lineas.push(`Monto del ajuste: ${formatCurrency(Number(fm))}`);
+  }
+  const tm = raw.total_mercaderia;
+  const tt = raw.total;
+  if (tm != null && tt != null && Math.abs(Number(tm) - Number(tt)) > 0.02) {
+    lineas.push(
+      `Mercadería ${formatCurrency(Number(tm))} → total cobrado ${formatCurrency(Number(tt))}`,
+    );
+  }
+  if (mp === 'mixto' && raw.metodo_pago_detalle && typeof raw.metodo_pago_detalle === 'object') {
+    const d = raw.metodo_pago_detalle as Record<string, unknown>;
+    const partes = ['efectivo', 'debito', 'credito', 'transferencia']
+      .map((k) => {
+        const v = d[k];
+        const n = typeof v === 'number' ? v : Number(v);
+        if (Number.isFinite(n) && n > 0) return `${k}: ${formatCurrency(n)}`;
+        return null;
+      })
+      .filter(Boolean);
+    if (partes.length) lineas.push(`Pago mixto: ${partes.join(' · ')}`);
+  }
+  const opId = raw.medio_pago_opcion_id;
+  if (lineas.length === 0) {
+    lineas.push('Sin ajuste por medio de pago en el ticket (total = mercadería).');
+  }
+  return {
+    lineas,
+    totalTicket: tt != null ? Number(tt) : null,
+    medioPagoOpcionId: typeof opId === 'string' ? opId : null,
+  };
+}
+
+function snapshotClienteDesdeTicket(
+  clienteId: string | null | undefined,
+  cliente: unknown,
+): TicketClienteSnapshot {
+  if (!clienteId) {
+    return {
+      id: null,
+      titulo: 'Consumidor final',
+      detalle: 'Venta sin cliente en cuenta corriente (ticket mostrador).',
+    };
+  }
+  const c = cliente as {
+    nombre?: string;
+    razon_social?: string | null;
+    cuit_dni?: string | null;
+    condicion_iva?: string | null;
+  } | null;
+  if (!c || (!c.nombre && !c.razon_social)) {
+    return {
+      id: clienteId,
+      titulo: 'Cliente del ticket',
+      detalle: 'Los datos fiscales se toman de la base al emitir.',
+    };
+  }
+  const nombre = (c.razon_social || c.nombre || 'Cliente').trim();
+  const cond =
+    c.condicion_iva != null
+      ? CONDICION_IVA_LABELS[c.condicion_iva] ?? c.condicion_iva
+      : null;
+  const idf = c.cuit_dni?.trim();
+  const detalle = [idf, cond].filter(Boolean).join(' · ') || null;
+  return { id: clienteId, titulo: nombre, detalle };
+}
 
 type Producto = {
   id: string;
@@ -86,7 +181,14 @@ function margenColor(pct: number): string {
   return 'text-red-600';
 }
 
-export function EmitirComprobanteClient({ initialTipo }: { initialTipo?: string }) {
+export function EmitirComprobanteClient({
+  initialTipo,
+  desdeTicketId,
+}: {
+  initialTipo?: string;
+  /** Precarga ítems y cliente desde un ticket para emitir la factura fiscal. */
+  desdeTicketId?: string;
+}) {
   const router = useRouter();
 
   const [clientes, setClientes] = useState<Cliente[]>([]);
@@ -102,6 +204,11 @@ export function EmitirComprobanteClient({ initialTipo }: { initialTipo?: string 
   const [notas, setNotas] = useState('');
   const [emitiendo, setEmitiendo] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [desdeTicketListo, setDesdeTicketListo] = useState(false);
+  const [precargandoTicket, setPrecargandoTicket] = useState(false);
+  const [ticketClienteSnapshot, setTicketClienteSnapshot] =
+    useState<TicketClienteSnapshot | null>(null);
+  const [ticketPagoVista, setTicketPagoVista] = useState<TicketPagoVista | null>(null);
   const [mediosPago, setMediosPago] = useState<MedioPagoRow[]>([]);
   const [medioPagoId, setMedioPagoId] = useState('');
   const [opcionPagoId, setOpcionPagoId] = useState('');
@@ -111,6 +218,152 @@ export function EmitirComprobanteClient({ initialTipo }: { initialTipo?: string 
       setTipo('presupuesto');
     }
   }, [initialTipo]);
+
+  useEffect(() => {
+    if (!desdeTicketId || initialTipo === 'presupuesto') {
+      setDesdeTicketListo(false);
+      setTicketClienteSnapshot(null);
+      setTicketPagoVista(null);
+      return;
+    }
+
+    let cancelled = false;
+
+    async function precargar() {
+      setPrecargandoTicket(true);
+      setError(null);
+      setDesdeTicketListo(false);
+      setTicketClienteSnapshot(null);
+      setTicketPagoVista(null);
+      try {
+        const [res, tRes] = await Promise.all([
+          fetch(`/api/facturacion/${desdeTicketId}`),
+          fetch('/api/configuracion/tenant'),
+        ]);
+        const json = await res.json();
+        const tJson = tRes.ok ? await tRes.json() : {};
+        const emisorIva = (tJson.condicion_iva as string | null) ?? null;
+        if (cancelled) return;
+        if (!res.ok) {
+          setError(json.error ?? 'No se pudo cargar el ticket');
+          return;
+        }
+        if (json.tipo !== 'ticket') {
+          setError('El comprobante indicado no es un ticket.');
+          return;
+        }
+        if (json.estado !== 'emitido') {
+          setError('Solo se pueden fiscalizar tickets emitidos.');
+          return;
+        }
+        if (json.fiscalizado_por_id) {
+          setError('Este ticket ya tiene una factura fiscal asociada.');
+          return;
+        }
+
+        const snap = snapshotClienteDesdeTicket(
+          json.cliente_id as string | null | undefined,
+          json.cliente,
+        );
+        setTicketClienteSnapshot(snap);
+        setClienteId(snap.id ?? '');
+        setTipo(
+          determinarTipoLocal(
+            emisorIva,
+            snap.id ? ((json.cliente as Cliente | undefined)?.condicion_iva ?? null) : 'consumidor_final',
+          ),
+        );
+        setTicketPagoVista(buildTicketPagoVista(json as Record<string, unknown>));
+
+        const rows = (json.items ?? []) as {
+          producto_id: string | null;
+          cantidad: number;
+          precio_unitario: number;
+          precio_costo: number | null;
+          producto:
+            | {
+                nombre: string;
+                codigo: string | null;
+                iva_porcentaje: number | null;
+                stock_actual: number | null;
+                activo: boolean | null;
+              }
+            | null;
+        }[];
+
+        const nextItems: ItemForm[] = [];
+        let algunProductoEliminado = false;
+        for (const row of rows) {
+          if (!row.producto_id || !row.producto) {
+            algunProductoEliminado = true;
+            continue;
+          }
+          const productoExtra = productos.find((p) => p.id === row.producto_id);
+          nextItems.push({
+            producto: {
+              id: row.producto_id,
+              codigo: row.producto.codigo,
+              nombre: row.producto.nombre,
+              precio_venta: productoExtra?.precio_venta ?? row.precio_unitario,
+              precio_costo: productoExtra?.precio_costo ?? row.precio_costo ?? 0,
+              stock_actual: productoExtra?.stock_actual ?? row.producto.stock_actual ?? 0,
+              iva_porcentaje:
+                productoExtra?.iva_porcentaje ?? row.producto.iva_porcentaje ?? null,
+            },
+            cantidad: row.cantidad,
+            precio_unitario: row.precio_unitario,
+          });
+        }
+
+        if (nextItems.length === 0) {
+          setTicketClienteSnapshot(null);
+          setTicketPagoVista(null);
+          setClienteId('');
+          setTipo('');
+          setError(
+            'Los productos del ticket ya no existen. Cargá los ítems a mano.',
+          );
+          setItems([]);
+          return;
+        }
+
+        setItems(nextItems);
+        setDesdeTicketListo(true);
+        if (algunProductoEliminado) {
+          setError(
+            'Algunos productos del ticket fueron eliminados. Precargamos solo los que siguen existiendo; revisalos antes de emitir.',
+          );
+        }
+      } finally {
+        if (!cancelled) setPrecargandoTicket(false);
+      }
+    }
+
+    if (!loading && productos.length > 0) {
+      void precargar();
+    }
+
+    return () => {
+      cancelled = true;
+    };
+  }, [desdeTicketId, initialTipo, loading, productos]);
+
+  const emisionDesdeTicketOk = Boolean(
+    desdeTicketListo && desdeTicketId && ticketClienteSnapshot,
+  );
+
+  useEffect(() => {
+    if (!ticketPagoVista?.medioPagoOpcionId || mediosPago.length === 0) return;
+    const opId = ticketPagoVista.medioPagoOpcionId;
+    for (const m of mediosPago) {
+      const o = m.medio_pago_opcion?.find((x) => x.id === opId);
+      if (o) {
+        setMedioPagoId(m.id);
+        setOpcionPagoId(o.id);
+        return;
+      }
+    }
+  }, [ticketPagoVista?.medioPagoOpcionId, mediosPago]);
 
   const loadData = useCallback(async () => {
     setLoading(true);
@@ -251,7 +504,14 @@ export function EmitirComprobanteClient({ initialTipo }: { initialTipo?: string 
   }, [total, opcionFinActiva]);
 
   async function handleEmitir() {
-    if (!clienteId || !tipo || items.length === 0) return;
+    if (!tipo || items.length === 0) return;
+    const clientePayload =
+      emisionDesdeTicketOk && ticketClienteSnapshot
+        ? ticketClienteSnapshot.id
+        : clienteId || null;
+    const requiereClienteManual =
+      !emisionDesdeTicketOk && tipo !== 'presupuesto';
+    if (requiereClienteManual && !clienteId) return;
     setEmitiendo(true);
     setError(null);
 
@@ -260,14 +520,19 @@ export function EmitirComprobanteClient({ initialTipo }: { initialTipo?: string 
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
         tipo,
-        cliente_id: clienteId,
+        cliente_id: clientePayload,
         items: items.map((i) => ({
           producto_id: i.producto.id,
           cantidad: i.cantidad,
           precio_unitario: i.precio_unitario,
         })),
         notas: notas || undefined,
-        medio_pago_opcion_id: opcionPagoId || undefined,
+        ...(!emisionDesdeTicketOk && (opcionPagoId || medioPagoId)
+          ? { medio_pago_opcion_id: opcionPagoId || undefined }
+          : {}),
+        ...(desdeTicketListo && desdeTicketId
+          ? { desde_ticket_id: desdeTicketId }
+          : {}),
       }),
     });
 
@@ -304,36 +569,63 @@ export function EmitirComprobanteClient({ initialTipo }: { initialTipo?: string 
         </h1>
       </div>
 
+      {desdeTicketId ? (
+        <div
+          className={`rounded-lg border px-3 py-2 text-sm ${desdeTicketListo ? 'border-blue-200 bg-blue-50 text-blue-900' : 'border-amber-200 bg-amber-50 text-amber-900'}`}
+        >
+          {precargandoTicket
+            ? 'Cargando datos del ticket…'
+            : desdeTicketListo
+              ? 'Estás emitiendo la factura fiscal por un ticket. El stock no se vuelve a descontar. Cliente y forma de pago (recargo/descuento del medio) son los del ticket; revisá importes de ítems antes de confirmar.'
+              : 'No se pudo usar el ticket como origen; corregí los datos abajo o volvé a Facturación.'}
+        </div>
+      ) : null}
+
       {error ? <p className="text-sm text-destructive">{error}</p> : null}
 
       <div className="grid gap-4 sm:grid-cols-2">
-        <label className="grid gap-1 text-sm">
-          <span className="text-muted-foreground">Cliente *</span>
-          <select
-            value={clienteId}
-            onChange={(e) => handleClienteChange(e.target.value)}
-            className="flex h-9 w-full rounded-md border border-input bg-transparent px-3 py-1 text-sm shadow-xs transition-colors focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring"
-          >
-            <option value="">Seleccionar cliente…</option>
-            {clientes
-              .filter((c) => c.id && c.nombre)
-              .map((c) => (
-                <option key={c.id} value={c.id}>
-                  {c.razon_social || c.nombre}
-                  {c.condicion_iva
-                    ? ` — ${CONDICION_IVA_LABELS[c.condicion_iva] ?? c.condicion_iva}`
-                    : ''}
-                </option>
-              ))}
-          </select>
-        </label>
+        {emisionDesdeTicketOk && ticketClienteSnapshot ? (
+          <div className="grid gap-1 text-sm">
+            <span className="text-muted-foreground">Cliente (desde el ticket)</span>
+            <div className="flex min-h-9 flex-col justify-center rounded-md border border-input bg-muted/40 px-3 py-2">
+              <span className="font-medium">{ticketClienteSnapshot.titulo}</span>
+              {ticketClienteSnapshot.detalle ? (
+                <span className="text-xs text-muted-foreground">
+                  {ticketClienteSnapshot.detalle}
+                </span>
+              ) : null}
+            </div>
+          </div>
+        ) : (
+          <label className="grid gap-1 text-sm">
+            <span className="text-muted-foreground">Cliente *</span>
+            <select
+              value={clienteId}
+              onChange={(e) => handleClienteChange(e.target.value)}
+              className="flex h-9 w-full rounded-md border border-input bg-transparent px-3 py-1 text-sm shadow-xs transition-colors focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring"
+            >
+              <option value="">Seleccionar cliente…</option>
+              {clientes
+                .filter((c) => c.id && c.nombre)
+                .map((c) => (
+                  <option key={c.id} value={c.id}>
+                    {c.razon_social || c.nombre}
+                    {c.condicion_iva
+                      ? ` — ${CONDICION_IVA_LABELS[c.condicion_iva] ?? c.condicion_iva}`
+                      : ''}
+                  </option>
+                ))}
+            </select>
+          </label>
+        )}
 
         <label className="grid gap-1 text-sm">
           <span className="text-muted-foreground">Tipo de comprobante *</span>
           <select
             value={tipo}
             onChange={(e) => setTipo(e.target.value)}
-            className="flex h-9 w-full rounded-md border border-input bg-transparent px-3 py-1 text-sm shadow-xs transition-colors focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring"
+            disabled={emisionDesdeTicketOk}
+            className="flex h-9 w-full rounded-md border border-input bg-transparent px-3 py-1 text-sm shadow-xs transition-colors focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring disabled:cursor-not-allowed disabled:opacity-70"
           >
             <option value="">Seleccionar…</option>
             {Object.entries(TIPO_LABELS).map(([value, label]) => (
@@ -512,6 +804,12 @@ export function EmitirComprobanteClient({ initialTipo }: { initialTipo?: string 
                 {opcionFinActiva.recargo_porcentaje}%)
               </p>
             ) : null}
+            {emisionDesdeTicketOk && ticketPagoVista?.totalTicket != null ? (
+              <p className="text-xs text-muted-foreground">
+                Total cobrado en el ticket (incluye ajuste por medio de pago):{' '}
+                {formatCurrency(ticketPagoVista.totalTicket)}
+              </p>
+            ) : null}
             {showMargen && (
               <p className={cn('text-sm font-medium', margenColor(margenTotalPct))}>
                 Margen total: {formatCurrency(margenTotal)} ({margenTotalPct.toFixed(1)}%)
@@ -521,51 +819,66 @@ export function EmitirComprobanteClient({ initialTipo }: { initialTipo?: string 
         );
       })() : null}
 
-      <div className="rounded-xl border bg-card p-4 shadow-sm space-y-3">
-        <p className="text-sm font-medium">Medio de pago (opcional)</p>
-        <p className="text-xs text-muted-foreground">
-          Si elegís un plan con recargo o descuento, el total se ajusta y, con ARCA, el recargo se informa
-          como tributo 99.
-        </p>
-        <div className="grid gap-3 sm:grid-cols-2">
-          <label className="grid gap-1 text-sm">
-            <span className="text-muted-foreground">Medio</span>
-            <select
-              value={medioPagoId}
-              onChange={(e) => {
-                setMedioPagoId(e.target.value);
-                setOpcionPagoId('');
-              }}
-              className="flex h-9 w-full rounded-md border border-input bg-transparent px-3 py-1 text-sm shadow-xs"
-            >
-              <option value="">Sin plan configurado</option>
-              {mediosPago.map((m) => (
-                <option key={m.id} value={m.id}>
-                  {m.nombre}
-                </option>
-              ))}
-            </select>
-          </label>
-          {medioPagoId ? (
+      {emisionDesdeTicketOk && ticketPagoVista ? (
+        <div className="rounded-xl border bg-card p-4 shadow-sm space-y-2">
+          <p className="text-sm font-medium">Pago (desde el ticket)</p>
+          <p className="text-xs text-muted-foreground">
+            La factura fiscal replica el mismo medio, cuotas/recargo o pago mixto que en el ticket; el
+            servidor toma esos datos del comprobante original.
+          </p>
+          <ul className="list-inside list-disc space-y-1 text-sm">
+            {ticketPagoVista.lineas.map((line, i) => (
+              <li key={i}>{line}</li>
+            ))}
+          </ul>
+        </div>
+      ) : (
+        <div className="rounded-xl border bg-card p-4 shadow-sm space-y-3">
+          <p className="text-sm font-medium">Medio de pago (opcional)</p>
+          <p className="text-xs text-muted-foreground">
+            Si elegís un plan con recargo o descuento, el total se ajusta y, con ARCA, el recargo se informa
+            como tributo 99.
+          </p>
+          <div className="grid gap-3 sm:grid-cols-2">
             <label className="grid gap-1 text-sm">
-              <span className="text-muted-foreground">Cuotas / %</span>
+              <span className="text-muted-foreground">Medio</span>
               <select
-                value={opcionPagoId}
-                onChange={(e) => setOpcionPagoId(e.target.value)}
+                value={medioPagoId}
+                onChange={(e) => {
+                  setMedioPagoId(e.target.value);
+                  setOpcionPagoId('');
+                }}
                 className="flex h-9 w-full rounded-md border border-input bg-transparent px-3 py-1 text-sm shadow-xs"
               >
-                {(mediosPago.find((x) => x.id === medioPagoId)?.medio_pago_opcion ?? []).map((o) => (
-                  <option key={o.id} value={o.id}>
-                    {o.cuotas === 1 ? 'Contado' : `${o.cuotas} cuotas`} (
-                    {o.recargo_porcentaje >= 0 ? '+' : ''}
-                    {o.recargo_porcentaje}%)
+                <option value="">Sin plan configurado</option>
+                {mediosPago.map((m) => (
+                  <option key={m.id} value={m.id}>
+                    {m.nombre}
                   </option>
                 ))}
               </select>
             </label>
-          ) : null}
+            {medioPagoId ? (
+              <label className="grid gap-1 text-sm">
+                <span className="text-muted-foreground">Cuotas / %</span>
+                <select
+                  value={opcionPagoId}
+                  onChange={(e) => setOpcionPagoId(e.target.value)}
+                  className="flex h-9 w-full rounded-md border border-input bg-transparent px-3 py-1 text-sm shadow-xs"
+                >
+                  {(mediosPago.find((x) => x.id === medioPagoId)?.medio_pago_opcion ?? []).map((o) => (
+                    <option key={o.id} value={o.id}>
+                      {o.cuotas === 1 ? 'Contado' : `${o.cuotas} cuotas`} (
+                      {o.recargo_porcentaje >= 0 ? '+' : ''}
+                      {o.recargo_porcentaje}%)
+                    </option>
+                  ))}
+                </select>
+              </label>
+            ) : null}
+          </div>
         </div>
-      </div>
+      )}
 
       <label className="grid gap-1 text-sm">
         <span className="text-muted-foreground">
@@ -582,7 +895,12 @@ export function EmitirComprobanteClient({ initialTipo }: { initialTipo?: string 
       <Button
         type="button"
         onClick={() => void handleEmitir()}
-        disabled={emitiendo || !clienteId || !tipo || items.length === 0}
+        disabled={
+          emitiendo ||
+          !tipo ||
+          items.length === 0 ||
+          (!emisionDesdeTicketOk && tipo !== 'presupuesto' && !clienteId)
+        }
         className="w-full py-3"
       >
         {emitiendo

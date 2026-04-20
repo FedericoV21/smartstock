@@ -134,7 +134,7 @@ function ProductosPageInner() {
         ) : null}
       </div>
 
-      <div className="flex flex-col gap-3 rounded-xl border bg-card p-4 shadow-sm md:flex-row md:flex-wrap md:items-end">
+      <div className="flex flex-col gap-3 rounded-xl border bg-card p-4 shadow-brand-sm md:flex-row md:flex-wrap md:items-end">
         <label className="grid min-w-[12rem] flex-1 gap-1 text-sm">
           <span className="text-muted-foreground">Buscar</span>
           <Input
@@ -202,7 +202,7 @@ function ProductosPageInner() {
       </div>
 
       {modulos.facturador_pos && selected.size > 0 && (
-        <div className="flex items-center gap-3 rounded-xl border bg-card p-3 shadow-sm">
+        <div className="flex items-center gap-3 rounded-xl border bg-card p-3 shadow-brand-sm">
           <span className="text-sm text-muted-foreground">
             {selected.size} seleccionado(s)
           </span>

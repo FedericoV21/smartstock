@@ -1,9 +1,13 @@
 import { NextResponse, type NextRequest } from 'next/server';
 
 import { getTenantSession } from '@/lib/api/tenant-session';
+import { PRESUPUESTOS_ACCESO_BLOQUEADO } from '@/lib/features/presupuestos-acceso';
 import { moduloGuard } from '@/lib/modulos/guard';
 
 export async function GET(request: NextRequest) {
+  if (PRESUPUESTOS_ACCESO_BLOQUEADO) {
+    return NextResponse.json({ error: 'Presupuestos no disponible por el momento.' }, { status: 403 });
+  }
   const guard = await moduloGuard('presupuestos');
   if (!guard.allowed) return guard.response;
 

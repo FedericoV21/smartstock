@@ -4,7 +4,7 @@ export type PosPrefs = {
   sonidos: boolean;
   anchoTicket: '80mm' | '57mm';
   stockBloqueante: boolean;
-  /** Cobro en ticket (comprobante no fiscal / negro). */
+  /** Cobro en ticket (comprobante no fiscal). */
   aceptaTicket: boolean;
   /** Cobro en factura (blanco). */
   aceptaFactura: boolean;

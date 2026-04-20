@@ -484,7 +484,7 @@ export default function ConfiguracionPage() {
             <div className="sm:col-span-2 border-t pt-4 mt-1 space-y-3">
               <p className="text-sm font-medium">Tipo de comprobante en el POS</p>
               <p className="text-xs text-muted-foreground">
-                Definí si en esta caja podés cobrar en ticket (negro), en factura (blanco) o ambos, y cuál se elige al abrir el POS.
+                Definí si en esta caja podés cobrar en ticket, en factura (blanco) o ambos, y cuál se elige al abrir el POS.
               </p>
               <label className="flex items-center gap-3 text-sm">
                 <input
@@ -493,7 +493,7 @@ export default function ConfiguracionPage() {
                   onChange={(e) => updatePosPrefs({ aceptaTicket: e.target.checked })}
                   className="size-4 rounded border-input"
                 />
-                Permitir cobrar en ticket (negro)
+                Permitir cobrar en ticket
               </label>
               <label
                 className={`flex items-center gap-3 text-sm ${!tenant?.arca_configurado ? 'opacity-80' : ''}`}
@@ -538,7 +538,7 @@ export default function ConfiguracionPage() {
                   </SelectTrigger>
                   <SelectContent>
                     {posPrefs.aceptaTicket ? (
-                      <SelectItem value="ticket">Ticket (negro)</SelectItem>
+                      <SelectItem value="ticket">Ticket</SelectItem>
                     ) : null}
                     {posPrefs.aceptaFactura ? (
                       <SelectItem value="factura">Factura (blanco)</SelectItem>

@@ -53,7 +53,7 @@ export function ProductosTable({ productos, selectable, selected, onSelectionCha
   }
 
   return (
-    <div className="overflow-x-auto rounded-xl border bg-card shadow-sm">
+    <div className="overflow-x-auto rounded-xl border bg-card shadow-brand-sm">
       <table className="w-full text-sm">
         <thead>
           <tr className="border-b text-left text-muted-foreground">

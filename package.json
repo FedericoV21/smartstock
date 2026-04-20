@@ -11,7 +11,8 @@
     "test": "vitest run",
     "test:watch": "vitest",
     "gen:types": "node scripts/gen-supabase-types.mjs",
-    "gen:plantillas-prueba": "node scripts/gen-plantillas-formatos-prueba.mjs"
+    "gen:plantillas-prueba": "node scripts/gen-plantillas-formatos-prueba.mjs",
+    "pdf:demo": "vitest run src/test/pdf-demo.test.ts"
   },
   "keywords": [],
   "author": "",

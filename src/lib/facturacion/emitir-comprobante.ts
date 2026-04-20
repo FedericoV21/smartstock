@@ -37,7 +37,7 @@ export interface EmitirComprobanteBody {
   items: { producto_id: string; cantidad: number; precio_unitario: number }[];
   notas?: string;
   iva_porcentaje?: number;
-  metodo_pago?: 'efectivo' | 'debito' | 'credito' | 'transferencia' | 'mixto';
+  metodo_pago?: 'efectivo' | 'debito' | 'credito' | 'transferencia' | 'mixto' | 'posnet_mp';
   metodo_pago_detalle?: Record<string, number>;
   caja_id?: string;
   /**
@@ -48,6 +48,11 @@ export interface EmitirComprobanteBody {
   stock_bloqueante?: boolean;
   /** Opción de cuotas/recargo configurada en Medios de pago (configuración del tenant). */
   medio_pago_opcion_id?: string | null;
+  /**
+   * Emitir factura fiscal por un ticket ya emitido (sin mover stock de nuevo).
+   * El ticket debe ser `emitido`, tipo `ticket` y sin `fiscalizado_por_id`.
+   */
+  desde_ticket_id?: string | null;
 }
 
 export type EmitirComprobanteSuccess = {
@@ -143,6 +148,38 @@ async function obtenerNumeroArchivado(
   }
 
   return (data?.numero ?? 0) - 1;
+}
+
+/** CAE de comprobantes electrónicos AFIP: 14 dígitos. Otros valores en BD no deben bloquear la numeración. */
+function caeAfipFormatoValido(cae: string | null | undefined): boolean {
+  return typeof cae === 'string' && /^\d{14}$/.test(cae.trim());
+}
+
+/** Último número fiscal ya autorizado en Nexus (CAE válido). Evita reutilizar el 1 si FECompUltimoAutorizado devolvió 0 por PV/ambiente/parseo. */
+async function ultimoNumeroLocalConCaeValido(
+  supabase: SupabaseClient<Database>,
+  tenantId: string,
+  tipo: TipoComprobante,
+): Promise<number> {
+  const { data, error } = await supabase
+    .from('comprobante')
+    .select('numero, cae')
+    .eq('tenant_id', tenantId)
+    .eq('tipo', tipo)
+    .gt('numero', 0)
+    .not('cae', 'is', null);
+
+  if (error) {
+    throw new Error(`Error al leer numeración local con CAE: ${error.message}`);
+  }
+
+  let max = 0;
+  for (const row of data ?? []) {
+    if (caeAfipFormatoValido(row.cae) && row.numero > max) {
+      max = row.numero;
+    }
+  }
+  return max;
 }
 
 const CODIGOS_MEDIO_RAPIDO = new Set([
@@ -270,7 +307,7 @@ async function liberarNumeroConflictuanteErrorArca(
 ): Promise<string | null> {
   const { data: conflicto, error } = await supabase
     .from('comprobante')
-    .select('id, numero, estado, cae, notas')
+    .select('id, numero, estado, cae, notas, numero_orden')
     .eq('tenant_id', tenantId)
     .eq('tipo', tipo)
     .eq('numero', numero)
@@ -282,14 +319,21 @@ async function liberarNumeroConflictuanteErrorArca(
 
   if (!conflicto) return null;
 
-  if (conflicto.estado !== 'error_arca' || conflicto.cae) {
-    return `Ya existe un comprobante local con el número ${numero}. Revisá la numeración antes de reintentar.`;
+  if (caeAfipFormatoValido(conflicto.cae)) {
+    const ordenHint =
+      conflicto.numero_orden != null
+        ? ` La orden de venta de ese registro es #${conflicto.numero_orden} (distinta del número fiscal).`
+        : '';
+    return (
+      `Ya hay un ${formatearTipoComprobante(tipo)} autorizado por ARCA con número fiscal ${numero}.${ordenHint} ` +
+      `Si el sistema ofrece de nuevo el ${numero}, revisá punto de venta y ambiente (homologación vs producción) o sincronizá la numeración con AFIP.`
+    );
   }
 
   const numeroArchivado = await obtenerNumeroArchivado(supabase, tenantId, tipo);
   const notaArchivo = [
     conflicto.notas?.trim(),
-    `[Nexus] Registro archivado localmente como ${numeroArchivado} para liberar la numeración fiscal ${numero} tras un rechazo de ARCA.`,
+    `[Nexus] Registro archivado localmente como ${numeroArchivado} para liberar la numeración fiscal ${numero} (sin CAE válido AFIP; estado ${conflicto.estado}).`,
   ]
     .filter(Boolean)
     .join('\n\n');
@@ -329,7 +373,18 @@ async function obtenerNumeroComprobanteParaEmision(
     };
   }
 
-  const numero = ultimoAutorizado + 1;
+  let ultimoLocalConCae = 0;
+  try {
+    ultimoLocalConCae = await ultimoNumeroLocalConCaeValido(supabase, ctx.tenantId, tipo);
+  } catch (error) {
+    const mensaje = error instanceof Error ? error.message : String(error);
+    return { error: mensaje };
+  }
+
+  const ultimoArca =
+    Number.isFinite(ultimoAutorizado) && ultimoAutorizado >= 0 ? ultimoAutorizado : 0;
+  const ultimo = Math.max(ultimoArca, ultimoLocalConCae);
+  const numero = ultimo + 1;
   const conflicto = await liberarNumeroConflictuanteErrorArca(
     supabase,
     ctx.tenantId,
@@ -344,20 +399,253 @@ async function obtenerNumeroComprobanteParaEmision(
   return { numero };
 }
 
+type TicketOrigenFiscal = {
+  id: string;
+  cliente_id: string | null;
+  numero: number;
+};
+
+async function obtenerNumeroOrdenParaEmision(
+  supabase: SupabaseClient<Database>,
+  ctx: { tenantId: string },
+  ticketOrigen: TicketOrigenFiscal | null,
+): Promise<{ ok: true; numeroOrden: number } | { ok: false; status: number; error: string }> {
+  if (ticketOrigen) {
+    const { data: t, error } = await supabase
+      .from('comprobante')
+      .select('numero_orden')
+      .eq('id', ticketOrigen.id)
+      .eq('tenant_id', ctx.tenantId)
+      .maybeSingle();
+
+    if (error) {
+      return { ok: false, status: 500, error: error.message };
+    }
+    if (t?.numero_orden != null) {
+      return { ok: true, numeroOrden: t.numero_orden };
+    }
+  }
+
+  const { data, error: rpcErr } = await supabase.rpc('siguiente_numero_orden', {
+    p_tenant_id: ctx.tenantId,
+  });
+
+  if (rpcErr) {
+    return { ok: false, status: 500, error: rpcErr.message };
+  }
+  if (data == null || typeof data !== 'number') {
+    return {
+      ok: false,
+      status: 500,
+      error: 'No se pudo obtener el número de orden',
+    };
+  }
+
+  return { ok: true, numeroOrden: data };
+}
+
+type PagoTomadoDelTicket = Pick<
+  EmitirComprobanteBody,
+  'metodo_pago' | 'metodo_pago_detalle' | 'medio_pago_opcion_id' | 'caja_id'
+>;
+
+function normalizarMetodoPagoDesdeTicket(
+  mp: string | null | undefined,
+): EmitirComprobanteBody['metodo_pago'] {
+  if (!mp) return undefined;
+  if (mp === 'mixto') return 'mixto';
+  if (mp === 'posnet_mp') return 'posnet_mp';
+  if (CODIGOS_MEDIO_RAPIDO.has(mp)) {
+    return mp as EmitirComprobanteBody['metodo_pago'];
+  }
+  return undefined;
+}
+
+async function cargarPagoFiscalDesdeTicket(
+  supabase: SupabaseClient<Database>,
+  tenantId: string,
+  ticketId: string,
+): Promise<
+  { ok: true; pago: PagoTomadoDelTicket } | { ok: false; status: number; error: string }
+> {
+  const { data: row, error } = await supabase
+    .from('comprobante')
+    .select(
+      'metodo_pago, metodo_pago_detalle, medio_pago_opcion_id, caja_id, tenant_id',
+    )
+    .eq('id', ticketId)
+    .maybeSingle();
+
+  if (error) {
+    return { ok: false, status: 500, error: error.message };
+  }
+  if (!row || row.tenant_id !== tenantId) {
+    return { ok: false, status: 404, error: 'Ticket no encontrado' };
+  }
+
+  let detalle: EmitirComprobanteBody['metodo_pago_detalle'] = undefined;
+  const rawDet = row.metodo_pago_detalle;
+  if (rawDet && typeof rawDet === 'object' && !Array.isArray(rawDet)) {
+    detalle = rawDet as Record<string, number>;
+  }
+
+  return {
+    ok: true,
+    pago: {
+      metodo_pago: normalizarMetodoPagoDesdeTicket(row.metodo_pago),
+      metodo_pago_detalle: detalle,
+      medio_pago_opcion_id: row.medio_pago_opcion_id ?? undefined,
+      caja_id: row.caja_id ?? undefined,
+    },
+  };
+}
+
+async function resolverTicketParaFiscalizar(
+  supabase: SupabaseClient<Database>,
+  tenantId: string,
+  desdeTicketId: string | undefined | null,
+): Promise<{ ok: true; ticket: TicketOrigenFiscal } | { ok: false; status: number; error: string }> {
+  if (!desdeTicketId || typeof desdeTicketId !== 'string') {
+    return { ok: false, status: 400, error: 'ID de ticket inválido' };
+  }
+
+  const { data: ticket, error } = await supabase
+    .from('comprobante')
+    .select('id, tenant_id, tipo, estado, fiscalizado_por_id, cliente_id, numero')
+    .eq('id', desdeTicketId)
+    .maybeSingle();
+
+  if (error) {
+    return { ok: false, status: 500, error: error.message };
+  }
+  if (!ticket || ticket.tenant_id !== tenantId) {
+    return { ok: false, status: 404, error: 'Ticket no encontrado' };
+  }
+  if (ticket.tipo !== 'ticket') {
+    return { ok: false, status: 400, error: 'El comprobante de origen no es un ticket' };
+  }
+  if (ticket.estado !== 'emitido') {
+    return { ok: false, status: 400, error: 'Solo se puede fiscalizar un ticket en estado emitido' };
+  }
+  if (ticket.fiscalizado_por_id) {
+    return { ok: false, status: 409, error: 'Este ticket ya fue fiscalizado' };
+  }
+
+  return {
+    ok: true,
+    ticket: {
+      id: ticket.id,
+      cliente_id: ticket.cliente_id,
+      numero: ticket.numero,
+    },
+  };
+}
+
 export async function emitirComprobante(
   supabase: SupabaseClient<Database>,
   ctx: { tenantId: string; userId: string },
   body: EmitirComprobanteBody,
-  opciones?: { generarPdfYSubir?: boolean; omitirMovimientosStock?: boolean },
+  opciones?: {
+    generarPdfYSubir?: boolean;
+    omitirMovimientosStock?: boolean;
+    /** Actualiza un borrador existente (p. ej. pago Mercado Pago Point) en lugar de insertar fila nueva. */
+    reemplazarComprobanteBorradorId?: string;
+    mpPointPaymentId?: number | null;
+  },
 ): Promise<EmitirComprobanteResult> {
   const generarPdfYSubir = opciones?.generarPdfYSubir !== false;
-  const omitirMovimientosStock = opciones?.omitirMovimientosStock === true;
+  const reemplazarId = opciones?.reemplazarComprobanteBorradorId;
+
+  let ticketOrigen: TicketOrigenFiscal | null = null;
+  if (body.desde_ticket_id) {
+    const res = await resolverTicketParaFiscalizar(
+      supabase,
+      ctx.tenantId,
+      body.desde_ticket_id,
+    );
+    if (!res.ok) {
+      return { ok: false, status: res.status, error: res.error };
+    }
+    ticketOrigen = res.ticket;
+  }
+
+  const omitirMovimientosStock =
+    opciones?.omitirMovimientosStock === true || ticketOrigen !== null;
 
   if (!body.tipo || !body.items?.length) {
     return {
       ok: false,
       status: 400,
       error: 'Faltan campos obligatorios: tipo, items',
+    };
+  }
+
+  if (reemplazarId) {
+    if (body.desde_ticket_id) {
+      return {
+        ok: false,
+        status: 400,
+        error: 'No se puede combinar reemplazo de borrador con fiscalización desde ticket',
+      };
+    }
+    const { data: borrador, error: brErr } = await supabase
+      .from('comprobante')
+      .select('id, tenant_id, estado')
+      .eq('id', reemplazarId)
+      .maybeSingle();
+    if (brErr) {
+      return { ok: false, status: 500, error: brErr.message };
+    }
+    if (!borrador || borrador.tenant_id !== ctx.tenantId) {
+      return { ok: false, status: 404, error: 'Comprobante borrador no encontrado' };
+    }
+    if (borrador.estado !== 'borrador' && borrador.estado !== 'pendiente_posnet') {
+      return {
+        ok: false,
+        status: 400,
+        error: 'El comprobante no es un borrador pendiente de emisión',
+      };
+    }
+  }
+
+  if (ticketOrigen && (body.tipo === 'ticket' || body.tipo === 'presupuesto' || body.tipo === 'remito')) {
+    return {
+      ok: false,
+      status: 400,
+      error: 'Debés elegir un tipo de factura (A, B o C) o nota de crédito para fiscalizar el ticket',
+    };
+  }
+
+  if (ticketOrigen) {
+    const enviado =
+      body.cliente_id === undefined || body.cliente_id === '' || body.cliente_id === null
+        ? null
+        : body.cliente_id;
+    if (enviado !== ticketOrigen.cliente_id) {
+      return {
+        ok: false,
+        status: 400,
+        error: 'El cliente de la factura debe ser el mismo que el del ticket (incluido consumidor final sin cliente en cuenta).',
+      };
+    }
+  }
+
+  let payload: EmitirComprobanteBody = body;
+  if (ticketOrigen) {
+    const pagoRes = await cargarPagoFiscalDesdeTicket(
+      supabase,
+      ctx.tenantId,
+      ticketOrigen.id,
+    );
+    if (!pagoRes.ok) {
+      return { ok: false, status: pagoRes.status, error: pagoRes.error };
+    }
+    payload = {
+      ...body,
+      metodo_pago: pagoRes.pago.metodo_pago,
+      metodo_pago_detalle: pagoRes.pago.metodo_pago_detalle,
+      medio_pago_opcion_id: pagoRes.pago.medio_pago_opcion_id,
+      caja_id: pagoRes.pago.caja_id ?? body.caja_id,
     };
   }
 
@@ -399,6 +687,16 @@ export async function emitirComprobante(
     (tenant as { condicion_iva?: string | null }).condicion_iva,
     cliente.condicion_iva,
   );
+
+  const notasFinales =
+    ticketOrigen != null
+      ? [
+          `Fiscaliza ticket n.º ${ticketOrigen.numero}.`,
+          body.notas?.trim() || null,
+        ]
+          .filter(Boolean)
+          .join('\n\n')
+      : body.notas || null;
 
   const productoIds = body.items.map((i) => i.producto_id);
   const { data: productos } = await supabase
@@ -451,9 +749,9 @@ export async function emitirComprobante(
   const opcionCatalogo = await cargarOpcionFinanciacion(
     supabase,
     ctx.tenantId,
-    body.medio_pago_opcion_id,
+    payload.medio_pago_opcion_id,
   );
-  if (body.medio_pago_opcion_id && !opcionCatalogo) {
+  if (payload.medio_pago_opcion_id && !opcionCatalogo) {
     return {
       ok: false,
       status: 400,
@@ -465,8 +763,8 @@ export async function emitirComprobante(
   let opcionFin: OpcionFinanciacion | null = null;
   let esPagoMixto = false;
 
-  if (body.metodo_pago === 'mixto') {
-    const raw = body.metodo_pago_detalle;
+  if (payload.metodo_pago === 'mixto') {
+    const raw = payload.metodo_pago_detalle;
     if (!raw || typeof raw !== 'object' || Array.isArray(raw)) {
       return {
         ok: false,
@@ -489,8 +787,8 @@ export async function emitirComprobante(
     esPagoMixto = true;
   } else {
     opcionFin = opcionCatalogo;
-    if (!opcionFin && body.metodo_pago) {
-      opcionFin = await cargarFinanciacionRapida(supabase, ctx.tenantId, body.metodo_pago);
+    if (!opcionFin && payload.metodo_pago) {
+      opcionFin = await cargarFinanciacionRapida(supabase, ctx.tenantId, payload.metodo_pago);
     }
     fin = aplicarFinanciacion(importesMercaderia, tipoComprobante, opcionFin);
   }
@@ -504,6 +802,12 @@ export async function emitirComprobante(
     financiacion_porcentaje: mostrarFinanciacionEnComprobante ? fin.financiacionPorcentaje : null,
     financiacion_descripcion: mostrarFinanciacionEnComprobante ? fin.financiacionDescripcion : null,
   };
+
+  const condicionVentaPdf = esPagoMixto
+    ? 'Pago mixto'
+    : opcionFin?.medioNombre?.trim() || null;
+  const otrosTributosPdf =
+    fin.arca.impTrib > 0.005 ? fin.arca.impTrib : null;
 
   const { data: moduloConfig } = await supabase
     .from('modulo_config')
@@ -558,45 +862,83 @@ export async function emitirComprobante(
     };
   }
 
+  const ordenResult = await obtenerNumeroOrdenParaEmision(supabase, ctx, ticketOrigen);
+  if (!ordenResult.ok) {
+    return { ok: false, status: ordenResult.status, error: ordenResult.error };
+  }
+  const numeroOrden = ordenResult.numeroOrden;
+
   const puntoDeVentaComprobante = arcaConfig?.punto_de_venta ?? tenant.punto_de_venta ?? 1;
 
-  const { data: comprobante, error: compError } = await supabase
-    .from('comprobante')
-    .insert({
-      tenant_id: ctx.tenantId,
-      tipo: tipoComprobante as never,
-      numero,
-      fecha: hoyEnAR(),
-      cliente_id: body.cliente_id || null,
-      subtotal: importes.subtotal,
-      iva_monto: importes.iva_monto,
-      iva_porcentaje: importes.iva_porcentaje,
-      total: importes.total,
-      estado: 'emitido' as const,
-      notas: body.notas || null,
-      usuario_id: ctx.userId,
-      metodo_pago: esPagoMixto
-        ? 'mixto'
-        : opcionCatalogo
-          ? opcionCatalogo.medioNombre
-          : (body.metodo_pago ?? null),
-      metodo_pago_detalle: body.metodo_pago_detalle ?? null,
-      caja_id: body.caja_id ?? null,
-      total_mercaderia: mostrarFinanciacionEnComprobante ? fin.totalMercaderia : null,
-      medio_pago_opcion_id: esPagoMixto
-        ? null
-        : opcionCatalogo
-          ? body.medio_pago_opcion_id ?? null
-          : null,
-      financiacion_monto: mostrarFinanciacionEnComprobante ? fin.financiacionMonto : null,
-      financiacion_porcentaje: mostrarFinanciacionEnComprobante ? fin.financiacionPorcentaje : null,
-      financiacion_descripcion: mostrarFinanciacionEnComprobante ? fin.financiacionDescripcion : null,
-    })
-    .select()
-    .single();
+  const metodoPagoFila = esPagoMixto
+    ? 'mixto'
+    : opcionCatalogo
+      ? opcionCatalogo.medioNombre
+      : (payload.metodo_pago ?? null);
+
+  const filaBase = {
+    tenant_id: ctx.tenantId,
+    tipo: tipoComprobante as never,
+    numero,
+    numero_orden: numeroOrden,
+    fecha: hoyEnAR(),
+    cliente_id: body.cliente_id || null,
+    subtotal: importes.subtotal,
+    iva_monto: importes.iva_monto,
+    iva_porcentaje: importes.iva_porcentaje,
+    total: importes.total,
+    estado: 'emitido' as const,
+    notas: notasFinales,
+    usuario_id: ctx.userId,
+    metodo_pago: metodoPagoFila,
+    metodo_pago_detalle: payload.metodo_pago_detalle ?? null,
+    caja_id: payload.caja_id ?? null,
+    total_mercaderia: mostrarFinanciacionEnComprobante ? fin.totalMercaderia : null,
+    medio_pago_opcion_id: esPagoMixto
+      ? null
+      : opcionCatalogo
+        ? payload.medio_pago_opcion_id ?? null
+        : null,
+    financiacion_monto: mostrarFinanciacionEnComprobante ? fin.financiacionMonto : null,
+    financiacion_porcentaje: mostrarFinanciacionEnComprobante ? fin.financiacionPorcentaje : null,
+    financiacion_descripcion: mostrarFinanciacionEnComprobante ? fin.financiacionDescripcion : null,
+  };
+
+  let comprobante!: Database['public']['Tables']['comprobante']['Row'];
+  let compError: { message: string } | null;
+
+  if (reemplazarId) {
+    const { error: delErr } = await supabase
+      .from('comprobante_item')
+      .delete()
+      .eq('comprobante_id', reemplazarId);
+    if (delErr) {
+      return { ok: false, status: 500, error: `Error al limpiar ítems del borrador: ${delErr.message}` };
+    }
+    const upd = await supabase
+      .from('comprobante')
+      .update({
+        ...filaBase,
+        mp_point_intent_id: null,
+        mp_point_payment_id:
+          opciones?.mpPointPaymentId !== undefined ? opciones.mpPointPaymentId : null,
+      })
+      .eq('id', reemplazarId)
+      .select()
+      .single();
+    if (upd.data) comprobante = upd.data;
+    compError = upd.error;
+  } else {
+    const ins = await supabase.from('comprobante').insert(filaBase).select().single();
+    if (ins.data) comprobante = ins.data;
+    compError = ins.error;
+  }
 
   if (compError) {
     return { ok: false, status: 500, error: compError.message };
+  }
+  if (!comprobante) {
+    return { ok: false, status: 500, error: 'No se pudo persistir el comprobante' };
   }
 
   const itemsInsert = importes.items.map((item) => ({
@@ -612,6 +954,22 @@ export async function emitirComprobante(
 
   if (itemsError) {
     return { ok: false, status: 500, error: `Error al crear items: ${itemsError.message}` };
+  }
+
+  if (ticketOrigen) {
+    const { error: linkTicketErr } = await supabase
+      .from('comprobante')
+      .update({ fiscalizado_por_id: comprobante.id })
+      .eq('id', ticketOrigen.id)
+      .eq('tenant_id', ctx.tenantId);
+
+    if (linkTicketErr) {
+      return {
+        ok: false,
+        status: 500,
+        error: `El comprobante fiscal se creó pero no se pudo marcar el ticket como fiscalizado: ${linkTicketErr.message}`,
+      };
+    }
   }
 
   if (!esPresupuesto && !omitirMovimientosStock) {
@@ -652,7 +1010,10 @@ export async function emitirComprobante(
     }
   }
 
-  if (!esPresupuesto && body.cliente_id) {
+  const omitirCuentaCorriente =
+    ticketOrigen != null && ticketOrigen.cliente_id != null;
+
+  if (!esPresupuesto && body.cliente_id && !omitirCuentaCorriente) {
     const esNotaCredito = tipoComprobante.startsWith('nota_credito');
     const deltaDeuda = esNotaCredito ? -importes.total : importes.total;
 
@@ -689,6 +1050,8 @@ export async function emitirComprobante(
       return {
         cantidad: item.cantidad,
         descripcion: prod.nombre,
+        codigo: prod.codigo,
+        unidad_medida: 'unidades',
         precio_unitario: item.precio_unitario,
         subtotal: lineGross,
         iva_porcentaje: rate,
@@ -720,9 +1083,11 @@ export async function emitirComprobante(
         iva_monto: importes.iva_monto,
         iva_porcentaje: importes.iva_porcentaje,
         total: importes.total,
-        notas: body.notas || null,
+        notas: notasFinales,
         cae: null,
         cae_vencimiento: null,
+        condicion_venta: condicionVentaPdf,
+        importe_otros_tributos: otrosTributosPdf,
         ...pdfFinanciacion,
       },
       itemsPDF,
@@ -802,6 +1167,8 @@ export async function emitirComprobante(
             return {
               cantidad: item.cantidad,
               descripcion: prod.nombre,
+              codigo: prod.codigo,
+              unidad_medida: 'unidades',
               precio_unitario: item.precio_unitario,
               subtotal: lineGross,
               iva_porcentaje: rate,
@@ -833,9 +1200,11 @@ export async function emitirComprobante(
               iva_monto: importes.iva_monto,
               iva_porcentaje: importes.iva_porcentaje,
               total: importes.total,
-              notas: body.notas || null,
+              notas: notasFinales,
               cae: resultado.cae,
               cae_vencimiento: resultado.caeVencimiento,
+              condicion_venta: condicionVentaPdf,
+              importe_otros_tributos: otrosTributosPdf,
               ...pdfFinanciacion,
             },
             itemsPDFCae,

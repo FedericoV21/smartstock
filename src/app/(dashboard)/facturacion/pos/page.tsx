@@ -199,6 +199,30 @@ function CantidadEditor({
 
 export default function PosPage() {
   const posScanRef = useRef<PosScanInlineSearchRef>(null);
+  const resumenAsideRef = useRef<HTMLElement | null>(null);
+  const resumenListenersDetachRef = useRef<(() => void) | null>(null);
+  const descuentoTipoSelectAbiertoRef = useRef(false);
+  const [resumenTieneFoco, setResumenTieneFoco] = useState(false);
+
+  const setResumenAsideNode = useCallback((node: HTMLElement | null) => {
+    resumenAsideRef.current = node;
+    resumenListenersDetachRef.current?.();
+    resumenListenersDetachRef.current = null;
+    if (!node) return;
+    const onFocusIn = () => setResumenTieneFoco(true);
+    const onFocusOut = (ev: FocusEvent) => {
+      const next = ev.relatedTarget as Node | null;
+      if (next && node.contains(next)) return;
+      if (descuentoTipoSelectAbiertoRef.current) return;
+      setResumenTieneFoco(false);
+    };
+    node.addEventListener('focusin', onFocusIn);
+    node.addEventListener('focusout', onFocusOut);
+    resumenListenersDetachRef.current = () => {
+      node.removeEventListener('focusin', onFocusIn);
+      node.removeEventListener('focusout', onFocusOut);
+    };
+  }, []);
   const [tenantId, setTenantId] = useState('');
   const [tenantIva, setTenantIva] = useState<CondicionIVA>('consumidor_final');
   const [tenantName, setTenantName] = useState('');
@@ -631,6 +655,8 @@ export default function PosPage() {
     showCancelConfirm ||
     showCobro;
 
+  const pausarRefocusLector = anyModalOpen || resumenTieneFoco;
+
   const prefsPos = normalizePosPrefs(clampPosPrefsForArca(posPrefs, arcaConfigurado));
   const puedeAlternarComprobante = prefsPos.aceptaTicket && prefsPos.aceptaFactura;
 
@@ -650,6 +676,12 @@ export default function PosPage() {
         posScanRef.current?.focus();
       }
     },
+    onFocoDescuento: () => {
+      if (!canEmit || anyModalOpen) return;
+      const el = document.getElementById('pos-descuento-valor') as HTMLInputElement | null;
+      el?.focus();
+      el?.select();
+    },
     onCambiarCliente: () => {
       if (!anyModalOpen) setShowClienteSearch(true);
     },
@@ -667,7 +699,7 @@ export default function PosPage() {
   return (
     <>
       {/* Top bar */}
-      <header className="flex items-center justify-between border-b bg-card px-4 py-2 shadow-sm shrink-0">
+      <header className="flex shrink-0 items-center justify-between border-b border-[color:var(--brand-soft)] bg-[color:var(--brand-tint)] px-4 py-2">
         <div className="flex items-center gap-4">
           <Link
             href="/facturacion"
@@ -798,7 +830,7 @@ export default function PosPage() {
                 onScan={handleScan}
                 onSelectProduct={(p) => addProduct(mapSearchToProducto(p))}
                 placeholder="Escaneá código, escribí SKU o nombre del producto…"
-                pauseRefocus={anyModalOpen}
+                pauseRefocus={pausarRefocusLector}
                 disabled={!canEmit}
               />
             </div>
@@ -873,7 +905,8 @@ export default function PosPage() {
                         key={`${it.producto.id}-${i}`}
                         className={cn(
                           'border-b last:border-0 transition-colors',
-                          highlightIdx === i && 'bg-green-50 dark:bg-green-950/20',
+                          highlightIdx === i &&
+                            'bg-[color:var(--brand-tint)] ring-1 ring-[color:var(--brand-primary)]/35',
                         )}
                       >
                         <td className="px-4 py-2 text-muted-foreground">{i + 1}</td>
@@ -925,7 +958,7 @@ export default function PosPage() {
         </div>
 
         {/* Right: Summary panel (~35%) */}
-        <aside className="flex w-80 shrink-0 flex-col border-l bg-card p-4">
+        <aside ref={setResumenAsideNode} className="flex w-80 shrink-0 flex-col border-l bg-card p-4">
           <h2 className="text-sm font-medium text-muted-foreground mb-4">Resumen</h2>
 
           <div className="flex-1 space-y-3">
@@ -936,11 +969,17 @@ export default function PosPage() {
 
             {/* Discount */}
             <div className="space-y-1">
-              <span className="text-sm text-muted-foreground">Descuento</span>
+              <span className="text-sm text-muted-foreground">
+                Descuento{' '}
+                <span className="text-xs font-normal">(F9)</span>
+              </span>
               <div className="flex gap-2">
                 <Select
                   value={descuentoTipo}
                   onValueChange={(v) => setDescuentoTipo(v as DescuentoTipo)}
+                  onOpenChange={(open) => {
+                    descuentoTipoSelectAbiertoRef.current = open;
+                  }}
                 >
                   <SelectTrigger className="w-20 h-8 text-xs">
                     <SelectValue />
@@ -951,6 +990,7 @@ export default function PosPage() {
                   </SelectContent>
                 </Select>
                 <Input
+                  id="pos-descuento-valor"
                   type="number"
                   min={0}
                   max={descuentoTipo === 'porcentaje' ? 100 : subtotalRounded}
@@ -1035,7 +1075,7 @@ export default function PosPage() {
         <span>Cajero: {userName}</span>
         <button
           type="button"
-          className="hover:text-foreground underline"
+          className="text-[color:var(--brand-primary)] underline hover:text-[color:var(--brand-primary-hover)]"
           onClick={() => setShowHelp(true)}
         >
           F1 Ayuda

@@ -30,6 +30,7 @@ import {
 import { DashboardHeader } from '@/components/dashboard/dashboard-header';
 import { DashboardRoleProvider } from '@/components/dashboard/dashboard-role-context';
 import { useModulos } from '@/hooks/useModulos';
+import { PRESUPUESTOS_ACCESO_BLOQUEADO } from '@/lib/features/presupuestos-acceso';
 import type { ModuloKey, ModulosConfig } from '@/lib/modulos/modulo-key';
 import { cn } from '@/lib/utils';
 
@@ -42,6 +43,8 @@ type NavLeaf = {
   icon: IconType;
   modulo?: ModuloKey;
   adminOnly?: boolean;
+  /** Si true: se muestra el ítem pero no navega (p. ej. módulo en preparación). */
+  disabled?: boolean;
 };
 
 type NavGroup = {
@@ -65,6 +68,14 @@ const NAV_ENTRIES: NavEntry[] = [
       { type: 'leaf', label: 'Productos', href: '/productos', icon: Package, modulo: 'stock' },
       { type: 'leaf', label: 'Categorías', href: '/categorias', icon: FolderTree, modulo: 'stock' },
       { type: 'leaf', label: 'Movimientos', href: '/movimientos', icon: ArrowLeftRight, modulo: 'stock' },
+      {
+        type: 'leaf',
+        label: 'Presupuestos',
+        href: '/presupuestos',
+        icon: FileSpreadsheet,
+        modulo: 'presupuestos',
+        disabled: PRESUPUESTOS_ACCESO_BLOQUEADO,
+      },
     ],
   },
   {
@@ -97,7 +108,6 @@ const NAV_ENTRIES: NavEntry[] = [
       { type: 'leaf', label: 'POS', href: '/facturacion/pos', icon: ScanBarcode, modulo: 'facturador_pos' },
     ],
   },
-  { type: 'leaf', label: 'Presupuestos', href: '/presupuestos', icon: FileSpreadsheet, modulo: 'presupuestos' },
   { type: 'leaf', label: 'Analizador', href: '/analizador', icon: BarChart3, modulo: 'analizador_rentabilidad' },
   {
     type: 'group',
@@ -134,6 +144,9 @@ function leafActive(pathname: string, href: string) {
 
 function leafVisible(leaf: NavLeaf, modulos: ModulosConfig, isAdmin: boolean) {
   if (leaf.adminOnly && !isAdmin) return false;
+  if (leaf.disabled) {
+    return Boolean(modulos.stock);
+  }
   if (!leaf.modulo) return true;
   return Boolean(modulos[leaf.modulo]);
 }
@@ -157,6 +170,13 @@ function buildVisibleEntries(modulos: ModulosConfig, isAdmin: boolean): VisibleE
   }
   return result;
 }
+
+/** Activo: tinte suave + azul marca (sin bloque sólido ni sombra) */
+const navLinkActive =
+  'bg-[color:var(--brand-tint)] font-medium text-[color:var(--brand-primary)] shadow-none [&_svg]:text-[color:var(--brand-primary)]';
+
+const navLinkInactive =
+  'text-muted-foreground hover:bg-sidebar-accent hover:text-foreground [&_svg]:text-[color:var(--brand-accent)] hover:[&_svg]:text-foreground';
 
 function SidebarNav({
   pathname,
@@ -187,9 +207,7 @@ function SidebarNav({
               onClick={onNavigate}
               className={cn(
                 'flex items-center gap-3 rounded-lg px-3 py-2 text-sm transition-colors',
-                active
-                  ? 'bg-primary text-primary-foreground'
-                  : 'text-muted-foreground hover:bg-muted hover:text-foreground'
+                active ? navLinkActive : navLinkInactive,
               )}
             >
               <Icon className="h-4 w-4 shrink-0" aria-hidden />
@@ -200,7 +218,9 @@ function SidebarNav({
 
         const { group, items } = entry;
         const GroupIcon = group.icon;
-        const hasActiveChild = items.some((leaf) => leafActive(pathname, leaf.href));
+        const hasActiveChild = items.some(
+          (leaf) => !leaf.disabled && leafActive(pathname, leaf.href),
+        );
         const open = openGroups[group.key] ?? hasActiveChild;
 
         return (
@@ -212,42 +232,59 @@ function SidebarNav({
               className={cn(
                 'flex items-center gap-3 rounded-lg px-3 py-2 text-sm transition-colors',
                 hasActiveChild
-                  ? 'text-foreground'
-                  : 'text-muted-foreground hover:bg-muted hover:text-foreground'
+                  ? 'text-foreground [&_svg:first-child]:text-[color:var(--brand-primary)]'
+                  : navLinkInactive,
               )}
             >
               <GroupIcon className="h-4 w-4 shrink-0" aria-hidden />
               <span className="flex-1 text-left">{group.label}</span>
               <ChevronDown
                 className={cn(
-                  'h-4 w-4 shrink-0 transition-transform duration-200',
-                  open ? 'rotate-0' : '-rotate-90'
+                  'h-4 w-4 shrink-0 text-muted-foreground transition-transform duration-200',
+                  open ? 'rotate-0' : '-rotate-90',
                 )}
                 aria-hidden
               />
             </button>
             {open ? (
-              <div className="mt-1 flex flex-col gap-1 border-l border-border/60 pl-3 ml-4">
-                {items.map((leaf) => {
-                  const Icon = leaf.icon;
-                  const active = leafActive(pathname, leaf.href);
-                  return (
-                    <Link
-                      key={leaf.href}
-                      href={leaf.href}
-                      onClick={onNavigate}
-                      className={cn(
-                        'flex items-center gap-3 rounded-lg px-3 py-2 text-sm transition-colors',
-                        active
-                          ? 'bg-primary text-primary-foreground'
-                          : 'text-muted-foreground hover:bg-muted hover:text-foreground'
-                      )}
-                    >
-                      <Icon className="h-4 w-4 shrink-0" aria-hidden />
-                      {leaf.label}
-                    </Link>
-                  );
-                })}
+              <div className="mt-1 flex min-w-0 gap-0">
+                <div
+                  className="ml-3 w-px shrink-0 bg-sidebar-border"
+                  aria-hidden
+                />
+                <div className="flex min-w-0 flex-1 flex-col gap-0.5 pl-2.5">
+                  {items.map((leaf) => {
+                    const Icon = leaf.icon;
+                    const active = !leaf.disabled && leafActive(pathname, leaf.href);
+                    if (leaf.disabled) {
+                      return (
+                        <span
+                          key={leaf.href}
+                          className="flex cursor-not-allowed items-center gap-3 rounded-md px-2 py-1.5 text-sm text-muted-foreground opacity-60"
+                          aria-disabled="true"
+                          title="Próximamente"
+                        >
+                          <Icon className="h-4 w-4 shrink-0" aria-hidden />
+                          {leaf.label}
+                        </span>
+                      );
+                    }
+                    return (
+                      <Link
+                        key={leaf.href}
+                        href={leaf.href}
+                        onClick={onNavigate}
+                        className={cn(
+                          'flex items-center gap-3 rounded-md px-2 py-1.5 text-sm transition-colors',
+                          active ? navLinkActive : navLinkInactive,
+                        )}
+                      >
+                        <Icon className="h-4 w-4 shrink-0" aria-hidden />
+                        {leaf.label}
+                      </Link>
+                    );
+                  })}
+                </div>
               </div>
             ) : null}
           </div>
@@ -314,7 +351,9 @@ export function DashboardChrome({
         (entry): entry is VisibleGroup => entry.kind === 'group' && entry.group.key === key
       );
       const hasActiveChild = currentEntry
-        ? currentEntry.items.some((leaf) => leafActive(pathname, leaf.href))
+        ? currentEntry.items.some(
+            (leaf) => !leaf.disabled && leafActive(pathname, leaf.href)
+          )
         : false;
       const currentlyOpen = prev[key] ?? hasActiveChild;
       return { ...prev, [key]: !currentlyOpen };
@@ -337,8 +376,8 @@ export function DashboardChrome({
   return (
     <div className="flex min-h-screen overflow-x-hidden bg-muted/30">
       {!setupMode ? (
-      <aside className="hidden w-60 shrink-0 border-r bg-card md:flex md:flex-col">
-        <div className="flex h-24 items-center justify-center border-b px-4">
+      <aside className="hidden w-60 shrink-0 border-r border-sidebar-border bg-sidebar text-sidebar-foreground md:flex md:flex-col">
+        <div className="flex h-24 items-center justify-center border-b border-sidebar-border px-4">
           <SiteLogoLink />
         </div>
         {loading ? (
@@ -367,11 +406,11 @@ export function DashboardChrome({
       {!setupMode ? (
       <aside
         className={cn(
-          'fixed inset-y-0 left-0 z-50 flex w-[min(18rem,85vw)] flex-col border-r bg-card shadow-lg transition-transform duration-200 md:hidden',
+          'fixed inset-y-0 left-0 z-50 flex w-[min(18rem,85vw)] flex-col border-r border-sidebar-border bg-sidebar text-sidebar-foreground shadow-lg transition-transform duration-200 md:hidden',
           mobileOpen ? 'translate-x-0' : '-translate-x-full'
         )}
       >
-        <div className="relative flex h-24 items-center justify-center border-b px-4">
+        <div className="relative flex h-24 items-center justify-center border-b border-sidebar-border px-4">
           <SiteLogoLink onClick={() => setMobileOpen(false)} />
           <button
             type="button"

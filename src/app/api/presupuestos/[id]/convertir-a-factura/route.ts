@@ -2,6 +2,7 @@ import { NextResponse } from 'next/server';
 
 import { getTenantSession, rejectIfVisor } from '@/lib/api/tenant-session';
 import { emitirComprobante } from '@/lib/facturacion/emitir-comprobante';
+import { PRESUPUESTOS_ACCESO_BLOQUEADO } from '@/lib/features/presupuestos-acceso';
 import { moduloGuard } from '@/lib/modulos/guard';
 import type { Database } from '@/types/database';
 
@@ -11,6 +12,9 @@ export async function POST(
   request: Request,
   { params }: { params: Promise<{ id: string }> }
 ) {
+  if (PRESUPUESTOS_ACCESO_BLOQUEADO) {
+    return NextResponse.json({ error: 'Presupuestos no disponible por el momento.' }, { status: 403 });
+  }
   const guard = await moduloGuard('presupuestos');
   if (!guard.allowed) return guard.response;
 
