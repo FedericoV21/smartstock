@@ -5,6 +5,7 @@ import type { SupabaseClient } from '@supabase/supabase-js';
 import type { Database } from '@/types/database';
 
 import { desencriptarCampo } from './crypto';
+import { formatFetchError } from './format-fetch-error';
 import { getEndpoints } from './endpoints';
 import { logArcaOperacion } from './logger';
 import { buildLoginCmsRequest } from './xml-builder';
@@ -30,14 +31,22 @@ export async function obtenerTicketAcceso(
 
   const soapBody = buildLoginCmsRequest(cmsBase64);
 
-  const response = await fetch(endpoints.wsaa, {
-    method: 'POST',
-    headers: {
-      'Content-Type': 'text/xml; charset=utf-8',
-      SOAPAction: '',
-    },
-    body: soapBody,
-  });
+  let response: Response;
+  try {
+    response = await fetch(endpoints.wsaa, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'text/xml; charset=utf-8',
+        SOAPAction: '',
+      },
+      body: soapBody,
+      signal: AbortSignal.timeout(30000),
+    });
+  } catch (err) {
+    throw new Error(
+      `Red hacia WSAA (${endpoints.wsaa}): ${formatFetchError(err)}`,
+    );
+  }
 
   if (!response.ok) {
     const text = await response.text();

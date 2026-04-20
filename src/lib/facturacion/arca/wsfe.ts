@@ -2,6 +2,7 @@ import type { SupabaseClient } from '@supabase/supabase-js';
 
 import type { Database } from '@/types/database';
 
+import { formatFetchError } from './format-fetch-error';
 import { getEndpoints } from './endpoints';
 import { logArcaOperacion } from './logger';
 import { CONCEPTO, mapTipoComprobante, mapTipoDocReceptor } from './tipos';
@@ -84,7 +85,7 @@ export async function solicitarCAE(
 
     responseXml = await response.text();
   } catch (err) {
-    const mensaje = err instanceof Error ? err.message : String(err);
+    const mensaje = formatFetchError(err);
 
     await logArcaOperacion(supabase, config.tenant_id, {
       servicio: 'WSFE',
@@ -178,16 +179,30 @@ export async function consultarUltimoComprobante(
     tipoCodigo,
   );
 
-  const response = await fetch(endpoints.wsfe, {
-    method: 'POST',
-    headers: {
-      'Content-Type': 'text/xml; charset=utf-8',
-      SOAPAction: 'http://ar.gov.afip.dif.FEV1/FECompUltimoAutorizado',
-    },
-    body: soapBody,
-  });
+  let response: Response;
+  try {
+    response = await fetch(endpoints.wsfe, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'text/xml; charset=utf-8',
+        SOAPAction: 'http://ar.gov.afip.dif.FEV1/FECompUltimoAutorizado',
+      },
+      body: soapBody,
+      signal: AbortSignal.timeout(30000),
+    });
+  } catch (err) {
+    throw new Error(
+      `Red hacia WSFE (${endpoints.wsfe}): ${formatFetchError(err)}`,
+    );
+  }
 
   const xml = await response.text();
+
+  if (!response.ok) {
+    throw new Error(
+      `WSFE HTTP ${response.status} ${response.statusText} (${endpoints.wsfe}): ${xml.substring(0, 400)}`,
+    );
+  }
 
   await logArcaOperacion(supabase, config.tenant_id, {
     servicio: 'WSFE',

@@ -1,6 +1,5 @@
 'use client';
 
-import Link from 'next/link';
 import { useRouter, useSearchParams } from 'next/navigation';
 import { Suspense, useEffect, useState } from 'react';
 
@@ -110,16 +109,6 @@ function LoginForm() {
           {loading ? 'Ingresando…' : 'Ingresar'}
         </Button>
       </form>
-
-      <p className="mt-6 text-center text-sm text-muted-foreground">
-        ¿No tenés cuenta?{' '}
-        <Link
-          href="/register"
-          className="font-medium text-primary underline-offset-4 hover:underline"
-        >
-          Crear cuenta
-        </Link>
-      </p>
     </div>
   );
 }
