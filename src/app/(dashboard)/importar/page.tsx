@@ -36,6 +36,10 @@ export default function ImportarPage() {
     async (data: ArchivoParseado) => {
       let mapeo = mapearHeaders(data.headers);
       let saltoMapeoPorPerfil = false;
+      const draftId =
+        typeof crypto !== 'undefined' && 'randomUUID' in crypto
+          ? crypto.randomUUID()
+          : `draft-${Date.now()}-${Math.random().toString(36).slice(2, 10)}`;
 
       if (proveedorId) {
         const r = await fetch(`/api/proveedores/${proveedorId}`);
@@ -55,8 +59,9 @@ export default function ImportarPage() {
         }
       }
 
-      writeImportDraft({
+      await writeImportDraft({
         version: 1,
+        draftId,
         archivo: data,
         proveedorId: proveedorId || null,
         guardarPerfil,

@@ -13,10 +13,11 @@ import {
   writeImportResult,
   type ImportDraftV1,
 } from '@/lib/importar/draft';
+import { ejecutarImportacionPorLotes, type ImportProgress } from '@/lib/importar/client-import';
 import { type CampoProducto } from '@/lib/normalizador/aliases';
 import { deduplicarFilas } from '@/lib/normalizador/deduplicar';
 import type { MapeoColumna } from '@/lib/normalizador/mapear';
-import { validarFilas, type FilaValidada } from '@/lib/normalizador/validar';
+import { validarFila, validarFilas, type FilaValidada } from '@/lib/normalizador/validar';
 
 function generarHeaderSintetico(campo: CampoProducto): string {
   const r =
@@ -67,29 +68,58 @@ function filaValidadaToPayload(f: FilaValidada): FilaApi {
   };
 }
 
+type DraftMeta = Omit<ImportDraftV1, 'archivo'> & {
+  archivo: Omit<ImportDraftV1['archivo'], 'filas'>;
+};
+
+function sinFilas(draft: ImportDraftV1): DraftMeta {
+  const { filas, ...archivo } = draft.archivo;
+  return {
+    ...draft,
+    archivo,
+  };
+}
+
+function buildDraftHeaders(baseHeaders: string[], mapeo: MapeoColumna[]): string[] {
+  const fileHeaders = baseHeaders.filter((h) => !String(h).startsWith('__ss_'));
+  const syntheticHeaders = mapeo.filter((m) => m.sintetica).map((m) => m.headerOriginal);
+  const headers = [...fileHeaders];
+  for (const header of syntheticHeaders) {
+    if (!headers.includes(header)) headers.push(header);
+  }
+  return headers;
+}
+
 export default function ImportarPreviewPage() {
   const router = useRouter();
   const { canEdit } = useDashboardRole();
-  const [draft, setDraft] = useState<ImportDraftV1 | null>(null);
+  const [draft, setDraft] = useState<DraftMeta | null>(null);
   const [filasRaw, setFilasRaw] = useState<Record<string, string | number | null>[] | null>(null);
   const [mapeo, setMapeo] = useState<MapeoColumna[] | null>(null);
+  const [filasValidadas, setFilasValidadas] = useState<FilaValidada[]>([]);
   const [loading, setLoading] = useState(false);
+  const [importProgress, setImportProgress] = useState<ImportProgress | null>(null);
 
   useEffect(() => {
-    const d = readImportDraft();
-    if (!d) {
-      router.replace('/importar');
-      return;
-    }
-    setDraft(d);
-    setFilasRaw(d.archivo.filas);
-    setMapeo(d.mapeo);
-  }, [router]);
+    let cancelled = false;
 
-  const filasValidadas = useMemo(() => {
-    if (!filasRaw || !mapeo) return [];
-    return validarFilas(filasRaw, mapeo);
-  }, [filasRaw, mapeo]);
+    void (async () => {
+      const d = await readImportDraft();
+      if (cancelled) return;
+      if (!d) {
+        router.replace('/importar');
+        return;
+      }
+      setDraft(sinFilas(d));
+      setFilasRaw(d.archivo.filas);
+      setMapeo(d.mapeo);
+      setFilasValidadas(validarFilas(d.archivo.filas, d.mapeo));
+    })();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [router]);
 
   const columnasPreview = useMemo(
     () =>
@@ -105,105 +135,141 @@ export default function ImportarPreviewPage() {
 
   useEffect(() => {
     if (!draft || filasRaw === null || !mapeo) return;
-    const d = readImportDraft();
-    if (!d) return;
-    const fileHeaders = d.archivo.headers.filter((h) => !String(h).startsWith('__ss_'));
-    const syntheticHeaders = mapeo.filter((m) => m.sintetica).map((m) => m.headerOriginal);
-    const headers = [...fileHeaders];
-    for (const h of syntheticHeaders) {
-      if (!headers.includes(h)) headers.push(h);
-    }
-    writeImportDraft({
-      ...d,
-      mapeo,
-      archivo: {
-        ...d.archivo,
-        filas: filasRaw,
-        headers,
-      },
-    });
+    const timeout = window.setTimeout(() => {
+      void writeImportDraft({
+        ...draft,
+        mapeo,
+        archivo: {
+          ...draft.archivo,
+          filas: filasRaw,
+          headers: buildDraftHeaders(draft.archivo.headers, mapeo),
+        },
+      });
+    }, 350);
+
+    return () => window.clearTimeout(timeout);
   }, [draft, filasRaw, mapeo]);
 
-  const onFilaEdit = useCallback((index: number, headerOriginal: string, valor: string | number | null) => {
-    setFilasRaw((prev) => {
-      if (!prev) return prev;
-      return prev.map((row, i) => (i === index ? { ...row, [headerOriginal]: valor } : row));
-    });
-  }, []);
+  const onFilaEdit = useCallback(
+    (index: number, headerOriginal: string, valor: string | number | null) => {
+      if (!filasRaw || !mapeo) return;
+      const nextRows = [...filasRaw];
+      const updatedRow = { ...nextRows[index], [headerOriginal]: valor };
+      nextRows[index] = updatedRow;
 
-  const onAgregarColumna = useCallback((campo: CampoProducto) => {
-    const header = generarHeaderSintetico(campo);
-    setMapeo((prev) => [
-      ...(prev ?? []),
-      {
-        headerOriginal: header,
-        campoDetectado: campo,
-        confianza: 'ninguna',
-        ignorar: false,
-        sintetica: true,
-      },
-    ]);
-    setFilasRaw((prev) => (prev ? prev.map((row) => ({ ...row, [header]: null })) : null));
-  }, []);
+      setFilasRaw(nextRows);
+      setFilasValidadas((prev) => {
+        const next = prev.length === nextRows.length ? [...prev] : validarFilas(nextRows, mapeo);
+        next[index] = validarFila(updatedRow, index, mapeo);
+        return next;
+      });
+    },
+    [filasRaw, mapeo]
+  );
+
+  const onAgregarColumna = useCallback(
+    (campo: CampoProducto) => {
+      if (!filasRaw || !mapeo) return;
+      const header = generarHeaderSintetico(campo);
+      const nextRows = filasRaw.map((row) => ({ ...row, [header]: null }));
+      const nextMapeo = [
+        ...(mapeo ?? []),
+        {
+          headerOriginal: header,
+          campoDetectado: campo,
+          confianza: 'ninguna' as const,
+          ignorar: false,
+          sintetica: true,
+        },
+      ];
+      setMapeo((prev) => [
+        ...(prev ?? []),
+        {
+          headerOriginal: header,
+          campoDetectado: campo,
+          confianza: 'ninguna',
+          ignorar: false,
+          sintetica: true,
+        },
+      ]);
+      setFilasRaw(nextRows);
+      setFilasValidadas(validarFilas(nextRows, nextMapeo));
+    },
+    [filasRaw, mapeo]
+  );
 
   const onQuitarColumna = useCallback(
     (headerOriginal: string) => {
+      if (!filasRaw || !mapeo) return;
       const target = (mapeo ?? []).find((m) => m.headerOriginal === headerOriginal);
       if (!target?.sintetica) return;
+      const nextMapeo = mapeo.filter((m) => m.headerOriginal !== headerOriginal);
+      const nextRows = filasRaw.map((row) => {
+        const next = { ...row };
+        delete next[headerOriginal];
+        return next;
+      });
       setMapeo((prev) => (prev ?? []).filter((m) => m.headerOriginal !== headerOriginal));
-      setFilasRaw((prev) =>
-        prev
-          ? prev.map((row) => {
-              const next = { ...row };
-              delete next[headerOriginal];
-              return next;
-            })
-          : null
-      );
+      setFilasRaw(nextRows);
+      setFilasValidadas(validarFilas(nextRows, nextMapeo));
     },
-    [mapeo]
+    [filasRaw, mapeo]
   );
 
   const onBulkFill = useCallback(
     (headerOriginal: string, valorTexto: string, filaIndices: number[]) => {
-      const set = new Set(filaIndices);
-      setFilasRaw((prev) =>
-        prev
-          ? prev.map((row, i) =>
-              set.has(i)
-                ? { ...row, [headerOriginal]: valorTexto === '' ? null : valorTexto }
-                : row
-            )
-          : null
-      );
+      if (!filasRaw || !mapeo) return;
+
+      const nextRows = [...filasRaw];
+      const nextValidated = [...filasValidadas];
+      for (const rowIndex of filaIndices) {
+        const updatedRow = {
+          ...nextRows[rowIndex],
+          [headerOriginal]: valorTexto === '' ? null : valorTexto,
+        };
+        nextRows[rowIndex] = updatedRow;
+        nextValidated[rowIndex] = validarFila(updatedRow, rowIndex, mapeo);
+      }
+
+      setFilasRaw(nextRows);
+      setFilasValidadas(nextValidated);
     },
-    []
+    [filasRaw, filasValidadas, mapeo]
   );
 
   const onCalcularVentaPorMargen = useCallback(
     (headerPrecioVenta: string, porcentajeSobreCosto: number, filaIndices: number[]) => {
-      const idxSet = new Set(filaIndices);
-      setFilasRaw((prev) => {
-        if (!prev || !mapeo) return prev;
-        const v = validarFilas(prev, mapeo);
-        return prev.map((row, i) => {
-          if (!idxSet.has(i)) return row;
-          const costoRaw = v[i]?.datos.precio_costo;
-          const costo =
-            typeof costoRaw === 'number' && !Number.isNaN(costoRaw) ? costoRaw : null;
-          if (costo === null) return row;
-          const venta =
-            Math.round(costo * (1 + porcentajeSobreCosto / 100) * 100) / 100;
-          return { ...row, [headerPrecioVenta]: venta };
-        });
-      });
+      if (!filasRaw || !mapeo) return;
+
+      const nextRows = [...filasRaw];
+      const nextValidated = [...filasValidadas];
+
+      for (const rowIndex of filaIndices) {
+        const costoRaw = filasValidadas[rowIndex]?.datos.precio_costo;
+        const costo = typeof costoRaw === 'number' && !Number.isNaN(costoRaw) ? costoRaw : null;
+        if (costo === null) continue;
+
+        const venta = Math.round(costo * (1 + porcentajeSobreCosto / 100) * 100) / 100;
+        const updatedRow = { ...nextRows[rowIndex], [headerPrecioVenta]: venta };
+        nextRows[rowIndex] = updatedRow;
+        nextValidated[rowIndex] = validarFila(updatedRow, rowIndex, mapeo);
+      }
+
+      setFilasRaw(nextRows);
+      setFilasValidadas(nextValidated);
     },
-    [mapeo]
+    [filasRaw, filasValidadas, mapeo]
   );
 
-  const onFilaDescartar = useCallback((index: number) => {
-    setFilasRaw((prev) => (prev ? prev.filter((_, i) => i !== index) : null));
-  }, []);
+  const onFilaDescartar = useCallback(
+    (index: number) => {
+      if (!filasRaw || !mapeo) return;
+      const nextRows = filasRaw.filter((_, i) => i !== index);
+      setFilasRaw(nextRows);
+      setFilasValidadas(validarFilas(nextRows, mapeo));
+    },
+    [filasRaw, mapeo]
+  );
 
   const ejecutarImportacion = useCallback(async () => {
     if (!draft || !canEdit) return;
@@ -212,36 +278,26 @@ export default function ImportarPreviewPage() {
     const filas = unicas.map(filaValidadaToPayload);
 
     setLoading(true);
+    setImportProgress(null);
     try {
-      const res = await fetch('/api/importar/ejecutar', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
+      const resultado = await ejecutarImportacionPorLotes(
+        {
           filas,
           proveedor_id: draft.proveedorId,
           archivo_nombre: draft.archivo.nombreArchivo,
           origen: 'importacion_excel',
-        }),
-      });
-      const json = (await res.json()) as {
-        error?: string;
-        total_filas?: number;
-        productos_creados?: number;
-        productos_actualizados?: number;
-        filas_con_error?: number;
-        detalle_errores?: { fila: number; campo: string; error: string; valor_original?: string }[];
-      };
-
-      if (!res.ok) {
-        throw new Error(json.error ?? 'Error al importar');
-      }
+        },
+        {
+          onProgress: (progress) => setImportProgress(progress),
+        }
+      );
 
       writeImportResult({
-        total_filas: json.total_filas ?? filas.length,
-        productos_creados: json.productos_creados ?? 0,
-        productos_actualizados: json.productos_actualizados ?? 0,
-        filas_con_error: json.filas_con_error ?? 0,
-        detalle_errores: (json.detalle_errores ?? []).map((e) => ({
+        total_filas: resultado.total_filas,
+        productos_creados: resultado.productos_creados,
+        productos_actualizados: resultado.productos_actualizados,
+        filas_con_error: resultado.filas_con_error,
+        detalle_errores: resultado.detalle_errores.map((e) => ({
           fila: e.fila,
           campo: e.campo,
           error: e.error,
@@ -249,15 +305,20 @@ export default function ImportarPreviewPage() {
         duplicadas_descartadas: duplicadasDescartadas,
         archivo_nombre: draft.archivo.nombreArchivo,
       });
-      clearImportDraft();
+      await clearImportDraft();
       router.push('/importar/resumen');
     } catch (e) {
       console.error(e);
       alert((e as Error).message);
     } finally {
       setLoading(false);
+      setImportProgress(null);
     }
   }, [draft, canEdit, filasValidadas, router]);
+
+  const progressText = importProgress
+    ? `Importando lote ${importProgress.currentChunk}/${importProgress.totalChunks} · ${importProgress.processedRows}/${importProgress.totalRows} filas procesadas`
+    : null;
 
   if (!filasRaw || !mapeo || !draft) {
     return (
@@ -296,6 +357,7 @@ export default function ImportarPreviewPage() {
         onCalcularVentaPorMargen={onCalcularVentaPorMargen}
         onConfirmar={() => void ejecutarImportacion()}
         loading={loading || !canEdit}
+        statusText={progressText}
       />
     </div>
   );

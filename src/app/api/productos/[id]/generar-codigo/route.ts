@@ -22,12 +22,19 @@ export async function POST(
   // Check product exists
   const { data: producto } = await session.supabase
     .from('producto')
-    .select('id, codigo_barras')
+    .select('id, codigo_barras, es_pesable')
     .eq('id', id)
     .maybeSingle();
 
   if (!producto) {
     return NextResponse.json({ error: 'Producto no encontrado' }, { status: 404 });
+  }
+
+  if (producto.es_pesable) {
+    return NextResponse.json(
+      { error: 'Los productos pesables no usan código de barras (usá PLU).' },
+      { status: 400 }
+    );
   }
 
   if (producto.codigo_barras) {

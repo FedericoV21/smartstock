@@ -8,6 +8,7 @@ import { useDashboardRole } from '@/components/dashboard/dashboard-role-context'
 import { ExtraerPrecios } from '@/components/ia/extraer-precios';
 import { PrecioCambioPreview, type CambioPrecio } from '@/components/ia/precio-cambio-preview';
 import { PreviewTable, type SugerenciaVentaFila } from '@/components/importar/preview-table';
+import { ejecutarImportacionPorLotes, type ImportProgress } from '@/lib/importar/client-import';
 import { writeImportResult } from '@/lib/importar/draft';
 import { MAPEO_IA_PREVIEW } from '@/lib/ia/mapeo-preview';
 import { type CampoProducto } from '@/lib/normalizador/aliases';
@@ -67,6 +68,7 @@ export function IaPreciosClient() {
     null,
   );
   const [mapeoIa, setMapeoIa] = useState<MapeoColumna[]>(() => copiarMapeoIa());
+  const [importProgress, setImportProgress] = useState<ImportProgress | null>(null);
 
   const refreshLimite = useCallback(async () => {
     try {
@@ -264,36 +266,26 @@ export function IaPreciosClient() {
     const filas = unicas.map(filaValidadaToPayload);
 
     setLoadingEjec(true);
+    setImportProgress(null);
     try {
-      const res = await fetch('/api/importar/ejecutar', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
+      const resultado = await ejecutarImportacionPorLotes(
+        {
           filas,
           proveedor_id: null,
           archivo_nombre: archivoNombre,
           origen: 'ia_pdf',
-        }),
-      });
-      const json = (await res.json()) as {
-        error?: string;
-        total_filas?: number;
-        productos_creados?: number;
-        productos_actualizados?: number;
-        filas_con_error?: number;
-        detalle_errores?: { fila: number; campo: string; error: string; valor_original?: string }[];
-      };
-
-      if (!res.ok) {
-        throw new Error(json.error ?? 'Error al importar');
-      }
+        },
+        {
+          onProgress: (progress) => setImportProgress(progress),
+        }
+      );
 
       writeImportResult({
-        total_filas: json.total_filas ?? filas.length,
-        productos_creados: json.productos_creados ?? 0,
-        productos_actualizados: json.productos_actualizados ?? 0,
-        filas_con_error: json.filas_con_error ?? 0,
-        detalle_errores: (json.detalle_errores ?? []).map((e) => ({
+        total_filas: resultado.total_filas,
+        productos_creados: resultado.productos_creados,
+        productos_actualizados: resultado.productos_actualizados,
+        filas_con_error: resultado.filas_con_error,
+        detalle_errores: resultado.detalle_errores.map((e) => ({
           fila: e.fila,
           campo: e.campo,
           error: e.error,
@@ -311,10 +303,14 @@ export function IaPreciosClient() {
       alert((e as Error).message);
     } finally {
       setLoadingEjec(false);
+      setImportProgress(null);
     }
   }, [canEdit, filasRaw, filasValidadas, archivoNombre, router, refreshLimite]);
 
   const quedan = limite != null ? limite.limite - limite.usadas : null;
+  const progressText = importProgress
+    ? `Importando lote ${importProgress.currentChunk}/${importProgress.totalChunks} · ${importProgress.processedRows}/${importProgress.totalRows} filas procesadas`
+    : null;
 
   return (
     <div className="mx-auto max-w-6xl space-y-8 p-6">
@@ -402,6 +398,7 @@ export function IaPreciosClient() {
             onConfirmar={() => void ejecutarImportacion()}
             loading={loadingEjec || !canEdit}
             sugerenciasVentaPorFila={sugerencias}
+            statusText={progressText}
           />
         </div>
       ) : null}

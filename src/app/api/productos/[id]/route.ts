@@ -122,6 +122,31 @@ export async function PATCH(
     return NextResponse.json({ error: 'Sin cambios' }, { status: 400 });
   }
 
+  if (updates.es_pesable === true) {
+    updates.codigo_barras = null;
+  }
+
+  const codigoBarraPropuesto = updates.codigo_barras;
+  if (
+    codigoBarraPropuesto !== undefined &&
+    codigoBarraPropuesto !== null &&
+    String(codigoBarraPropuesto).trim() !== ''
+  ) {
+    if (updates.es_pesable !== true) {
+      const { data: curPesable } = await session.supabase
+        .from('producto')
+        .select('es_pesable')
+        .eq('id', id)
+        .maybeSingle();
+      if (curPesable?.es_pesable && updates.es_pesable !== false) {
+        return NextResponse.json(
+          { error: 'Los productos pesables no llevan código de barras (usá PLU).' },
+          { status: 400 }
+        );
+      }
+    }
+  }
+
   // If es_pesable changes to false, nullify plu
   if (updates.es_pesable === false && updates.plu === undefined) {
     updates.plu = null;

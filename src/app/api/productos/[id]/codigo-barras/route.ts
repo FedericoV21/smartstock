@@ -41,12 +41,19 @@ export async function POST(
   // Check product exists and belongs to tenant
   const { data: producto } = await session.supabase
     .from('producto')
-    .select('id')
+    .select('id, es_pesable')
     .eq('id', id)
     .maybeSingle();
 
   if (!producto) {
     return NextResponse.json({ error: 'Producto no encontrado' }, { status: 404 });
+  }
+
+  if (producto.es_pesable) {
+    return NextResponse.json(
+      { error: 'Los productos pesables no usan código de barras (usá PLU).' },
+      { status: 400 }
+    );
   }
 
   // Check for duplicates among active products in the same tenant

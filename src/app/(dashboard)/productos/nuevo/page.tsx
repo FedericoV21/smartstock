@@ -30,6 +30,8 @@ const UNIDADES: Unidad[] = [
   'ml',
 ];
 
+const UNIDADES_PESABLE: Unidad[] = ['kg', 'gramo'];
+
 export default function NuevoProductoPage() {
   const router = useRouter();
   const [categorias, setCategorias] = useState<{ id: string; nombre: string }[]>([]);
@@ -51,6 +53,9 @@ export default function NuevoProductoPage() {
   const [stockMinimo, setStockMinimo] = useState('0');
   const [stockInicial, setStockInicial] = useState('');
   const [fechaVencimiento, setFechaVencimiento] = useState('');
+  const [codigoBarras, setCodigoBarras] = useState('');
+  const [plu, setPlu] = useState('');
+  const [esPesable, setEsPesable] = useState(false);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [ivaDefault, setIvaDefault] = useState(21);
@@ -81,6 +86,16 @@ export default function NuevoProductoPage() {
     const venta = calcularPrecioVenta(costo, ganancia, iva, ivaDefault);
     setPrecioVenta(String(venta));
   }, [precioCosto, porcentajeGanancia, ivaPorcentaje, ivaDefault]);
+
+  useEffect(() => {
+    if (esPesable && unidad !== 'kg' && unidad !== 'gramo') {
+      setUnidad('kg');
+    }
+  }, [esPesable, unidad]);
+
+  useEffect(() => {
+    if (esPesable) setCodigoBarras('');
+  }, [esPesable]);
 
   const loadOpts = useCallback(async () => {
     const [cRes, pRes] = await Promise.all([fetch('/api/categorias'), fetch('/api/proveedores')]);
@@ -131,6 +146,9 @@ export default function NuevoProductoPage() {
         stock_minimo: parseInt(stockMinimo, 10) || 0,
         stock_inicial: stockInicial ? parseInt(stockInicial, 10) : 0,
         fecha_vencimiento: fechaVencimiento || null,
+        codigo_barras: esPesable ? null : codigoBarras.trim() || null,
+        es_pesable: esPesable,
+        plu: esPesable && plu.trim() ? plu.replace(/\D/g, '').slice(0, 5) : null,
       }),
     });
     const json = await res.json();
@@ -222,24 +240,89 @@ export default function NuevoProductoPage() {
           </label>
         </div>
 
-        <label className="grid gap-1 text-sm">
-          <span className="text-muted-foreground">Unidad</span>
-          <Select
-            value={unidad}
-            onValueChange={(v) => v && setUnidad(v as Unidad)}
-          >
-            <SelectTrigger className="w-full">
-              <SelectValue />
-            </SelectTrigger>
-            <SelectContent>
-              {UNIDADES.map((u) => (
-                <SelectItem key={u} value={u}>
-                  {u}
-                </SelectItem>
-              ))}
-            </SelectContent>
-          </Select>
-        </label>
+        <div className="rounded-lg border p-4 space-y-3">
+          <h3 className="text-sm font-medium">Códigos y escaneo</h3>
+          <label className="flex items-center gap-2 text-sm">
+            <input
+              type="checkbox"
+              checked={esPesable}
+              onChange={(e) => {
+                setEsPesable(e.target.checked);
+                if (!e.target.checked) setPlu('');
+              }}
+              className="size-4 rounded border-input"
+            />
+            Producto pesable (balanza)
+          </label>
+          {!esPesable ? (
+            <label className="grid gap-1 text-sm">
+              <span className="text-muted-foreground">Código de barras</span>
+              <Input
+                value={codigoBarras}
+                onChange={(e) => setCodigoBarras(e.target.value)}
+                placeholder="EAN-13 u otro (opcional)"
+                maxLength={14}
+              />
+            </label>
+          ) : (
+            <p className="text-xs text-muted-foreground">
+              Los productos pesables se identifican con el PLU en balanza, no con código de barras.
+            </p>
+          )}
+          {esPesable ? (
+            <>
+              <label className="grid gap-1 text-sm">
+                <span className="text-muted-foreground">PLU (código de balanza, hasta 5 dígitos)</span>
+                <Input
+                  value={plu}
+                  onChange={(e) => setPlu(e.target.value.replace(/\D/g, '').slice(0, 5))}
+                  placeholder="Ej: 00123"
+                  maxLength={5}
+                />
+              </label>
+              <label className="grid gap-1 text-sm">
+                <span className="text-muted-foreground">Unidad</span>
+                <span className="text-xs text-muted-foreground">
+                  Los productos pesables se venden por kg o gramo.
+                </span>
+                <Select
+                  value={unidad}
+                  onValueChange={(v) => v && setUnidad(v as Unidad)}
+                >
+                  <SelectTrigger className="w-full">
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {UNIDADES_PESABLE.map((u) => (
+                      <SelectItem key={u} value={u}>
+                        {u}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </label>
+            </>
+          ) : (
+            <label className="grid gap-1 text-sm">
+              <span className="text-muted-foreground">Unidad</span>
+              <Select
+                value={unidad}
+                onValueChange={(v) => v && setUnidad(v as Unidad)}
+              >
+                <SelectTrigger className="w-full">
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  {UNIDADES.map((u) => (
+                    <SelectItem key={u} value={u}>
+                      {u}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </label>
+          )}
+        </div>
 
         <div className="grid gap-4 sm:grid-cols-2">
           <label className="grid gap-1 text-sm">

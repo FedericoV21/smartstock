@@ -81,6 +81,8 @@ const UNIDADES: Unidad[] = [
   'ml',
 ];
 
+const UNIDADES_PESABLE: Unidad[] = ['kg', 'gramo'];
+
 export function ProductoDetalleClient({
   productoId,
   canEdit,
@@ -199,6 +201,16 @@ export function ProductoDetalleClient({
     setPrecioVenta(String(venta));
   }, [editMode, precioCosto, porcentajeGanancia, ivaPorcentaje, ivaDefault]);
 
+  useEffect(() => {
+    if (esPesable && unidad !== 'kg' && unidad !== 'gramo') {
+      setUnidad('kg');
+    }
+  }, [esPesable, unidad]);
+
+  useEffect(() => {
+    if (esPesable) setCodigoBarras('');
+  }, [esPesable]);
+
   async function save() {
     setSaving(true);
     setError(null);
@@ -216,7 +228,7 @@ export function ProductoDetalleClient({
         precio_venta: parseFloat(precioVenta) || 0,
         stock_minimo: parseFloat(stockMinimo) || 0,
         fecha_vencimiento: fechaVencimiento || null,
-        codigo_barras: codigoBarras.trim() || null,
+        codigo_barras: esPesable ? null : codigoBarras.trim() || null,
         plu: esPesable && plu.trim() ? plu.trim() : null,
         es_pesable: esPesable,
         rubro: rubro.trim() || null,
@@ -361,24 +373,26 @@ export function ProductoDetalleClient({
                 </Select>
               </label>
             </div>
-            <label className="grid gap-1 text-sm">
-              <span className="text-muted-foreground">Unidad</span>
-              <Select
-                value={unidad}
-                onValueChange={(v) => v && setUnidad(v as Unidad)}
-              >
-                <SelectTrigger className="w-full">
-                  <SelectValue />
-                </SelectTrigger>
-                <SelectContent>
-                  {UNIDADES.map((u) => (
-                    <SelectItem key={u} value={u}>
-                      {u}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-            </label>
+            {!esPesable ? (
+              <label className="grid gap-1 text-sm">
+                <span className="text-muted-foreground">Unidad</span>
+                <Select
+                  value={unidad}
+                  onValueChange={(v) => v && setUnidad(v as Unidad)}
+                >
+                  <SelectTrigger className="w-full">
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {UNIDADES.map((u) => (
+                      <SelectItem key={u} value={u}>
+                        {u}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </label>
+            ) : null}
             <div className="grid gap-4 sm:grid-cols-2">
               <label className="grid gap-1 text-sm">
                 <span className="text-muted-foreground">Rubro</span>
@@ -467,31 +481,6 @@ export function ProductoDetalleClient({
 
             <div className="rounded-lg border p-4 space-y-3">
               <h3 className="text-sm font-medium">Códigos y escaneo</h3>
-              <div className="flex items-end gap-2">
-                <label className="grid flex-1 gap-1 text-sm">
-                  <span className="text-muted-foreground">Código de barras</span>
-                  <Input
-                    value={codigoBarras}
-                    onChange={(e) => setCodigoBarras(e.target.value)}
-                    placeholder="EAN-13 o escaneá con la pistola"
-                    maxLength={14}
-                  />
-                </label>
-                <Button
-                  type="button"
-                  variant="outline"
-                  size="sm"
-                  disabled={barcodeLoading || !!codigoBarras}
-                  onClick={() => void generarCodigo()}
-                >
-                  {barcodeLoading ? '…' : 'Generar'}
-                </Button>
-              </div>
-              {barcodeMsg && (
-                <p className={`text-xs ${barcodeMsg.type === 'err' ? 'text-destructive' : barcodeMsg.type === 'warn' ? 'text-yellow-600' : 'text-green-600'}`}>
-                  {barcodeMsg.text}
-                </p>
-              )}
               <label className="flex items-center gap-2 text-sm">
                 <input
                   type="checkbox"
@@ -504,16 +493,72 @@ export function ProductoDetalleClient({
                 />
                 Producto pesable (balanza)
               </label>
+              {!esPesable ? (
+                <>
+                  <div className="flex items-end gap-2">
+                    <label className="grid flex-1 gap-1 text-sm">
+                      <span className="text-muted-foreground">Código de barras</span>
+                      <Input
+                        value={codigoBarras}
+                        onChange={(e) => setCodigoBarras(e.target.value)}
+                        placeholder="EAN-13 o escaneá con la pistola"
+                        maxLength={14}
+                      />
+                    </label>
+                    <Button
+                      type="button"
+                      variant="outline"
+                      size="sm"
+                      disabled={barcodeLoading || !!codigoBarras}
+                      onClick={() => void generarCodigo()}
+                    >
+                      {barcodeLoading ? '…' : 'Generar'}
+                    </Button>
+                  </div>
+                  {barcodeMsg && (
+                    <p className={`text-xs ${barcodeMsg.type === 'err' ? 'text-destructive' : barcodeMsg.type === 'warn' ? 'text-yellow-600' : 'text-green-600'}`}>
+                      {barcodeMsg.text}
+                    </p>
+                  )}
+                </>
+              ) : (
+                <p className="text-xs text-muted-foreground">
+                  Los productos pesables se identifican con el PLU en balanza, no con código de barras.
+                </p>
+              )}
               {esPesable && (
-                <label className="grid gap-1 text-sm">
-                  <span className="text-muted-foreground">PLU (código de balanza, hasta 5 dígitos)</span>
-                  <Input
-                    value={plu}
-                    onChange={(e) => setPlu(e.target.value.replace(/\D/g, '').slice(0, 5))}
-                    placeholder="Ej: 00123"
-                    maxLength={5}
-                  />
-                </label>
+                <div className="grid gap-4 sm:grid-cols-2">
+                  <label className="grid gap-1 text-sm">
+                    <span className="text-muted-foreground">Unidad de venta (pesable)</span>
+                    <span className="text-xs text-muted-foreground">
+                      Solo kg o gramo según cómo cargás el precio en balanza.
+                    </span>
+                    <Select
+                      value={unidad}
+                      onValueChange={(v) => v && setUnidad(v as Unidad)}
+                    >
+                      <SelectTrigger className="w-full">
+                        <SelectValue />
+                      </SelectTrigger>
+                      <SelectContent>
+                        {UNIDADES_PESABLE.map((u) => (
+                          <SelectItem key={u} value={u}>
+                            {u}
+                          </SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                  </label>
+                  <label className="grid gap-1 text-sm">
+                    <span className="text-muted-foreground">PLU (código de balanza, hasta 5 dígitos)</span>
+                    <Input
+                      value={plu}
+                      onChange={(e) => setPlu(e.target.value.replace(/\D/g, '').slice(0, 5))}
+                      placeholder="Ej: 00123"
+                      maxLength={5}
+                    />
+                  </label>
+                </div>
               )}
             </div>
 
@@ -601,10 +646,12 @@ export function ProductoDetalleClient({
             ) : null}
             {(data.codigo_barras || data.plu || data.es_pesable) && (
               <>
-                <div>
-                  <dt className="text-muted-foreground">Código de barras</dt>
-                  <dd className="font-mono">{data.codigo_barras ?? '—'}</dd>
-                </div>
+                {!data.es_pesable ? (
+                  <div>
+                    <dt className="text-muted-foreground">Código de barras</dt>
+                    <dd className="font-mono">{data.codigo_barras ?? '—'}</dd>
+                  </div>
+                ) : null}
                 {data.es_pesable && (
                   <div>
                     <dt className="text-muted-foreground">PLU (balanza)</dt>

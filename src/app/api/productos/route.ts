@@ -258,6 +258,24 @@ export async function POST(request: Request) {
   const unidad =
     (b.unidad as Database['public']['Enums']['unidad_medida'] | undefined) ?? 'unidad';
 
+  const esPesable = b.es_pesable === true;
+  if (esPesable && unidad !== 'kg' && unidad !== 'gramo') {
+    return NextResponse.json(
+      { error: 'Un producto pesable debe usar la unidad kg o gramo' },
+      { status: 400 }
+    );
+  }
+
+  const codigoBarrasRaw =
+    esPesable
+      ? null
+      : typeof b.codigo_barras === 'string' && b.codigo_barras.trim()
+        ? b.codigo_barras.trim().slice(0, 14)
+        : null;
+  const pluDigits =
+    typeof b.plu === 'string' ? b.plu.replace(/\D/g, '').slice(0, 5) : '';
+  const plu = esPesable && pluDigits ? pluDigits : null;
+
   const precioCosto = Number(b.precio_costo) || 0;
   const porcentajeGanancia = b.porcentaje_ganancia != null ? Number(b.porcentaje_ganancia) : null;
   const ivaPorcentaje = b.iva_porcentaje != null ? Number(b.iva_porcentaje) || null : null;
@@ -296,16 +314,21 @@ export async function POST(request: Request) {
       porcentaje_ganancia: porcentajeGanancia,
       ubicacion: typeof b.ubicacion === 'string' && b.ubicacion ? b.ubicacion : null,
       moneda: typeof b.moneda === 'string' && b.moneda ? b.moneda : '$',
+      codigo_barras: codigoBarrasRaw,
+      es_pesable: esPesable,
+      plu,
     })
     .select()
     .single();
 
   if (error) {
     if (error.code === '23505') {
-      return NextResponse.json(
-        { error: `Ya existe un producto con el código '${codigo}'` },
-        { status: 409 }
-      );
+      const msg = error.message.includes('codigo_barras')
+        ? 'Ya existe un producto activo con ese código de barras'
+        : error.message.includes('plu')
+          ? 'Ya existe un producto activo con ese PLU'
+          : `Ya existe un producto con el código '${codigo}'`;
+      return NextResponse.json({ error: msg }, { status: 409 });
     }
     return NextResponse.json({ error: error.message }, { status: 400 });
   }

@@ -7,154 +7,167 @@ export interface FilaValidada {
   valida: boolean;
 }
 
+type FilaRaw = Record<string, string | number | null>;
+type MapeoValidacion = {
+  headerOriginal: string;
+  campoDetectado: CampoProducto | null;
+  ignorar: boolean;
+};
+
+export function validarFila(
+  fila: FilaRaw,
+  index: number,
+  mapeo: MapeoValidacion[]
+): FilaValidada {
+  const datos: Partial<Record<CampoProducto, string | number | null>> = {};
+  const errores: FilaValidada['errores'] = [];
+
+  for (const col of mapeo) {
+    if (col.ignorar || !col.campoDetectado) continue;
+
+    const valorRaw = fila[col.headerOriginal];
+    const campo = col.campoDetectado;
+    const vacio = valorRaw == null || String(valorRaw).trim() === '';
+
+    if (campo !== 'nombre' && vacio) {
+      continue;
+    }
+
+    switch (campo) {
+      case 'codigo':
+        datos[campo] = valorRaw != null ? String(valorRaw).trim() : null;
+        break;
+
+      case 'nombre':
+        if (vacio) {
+          continue;
+        }
+        datos[campo] = String(valorRaw).trim();
+        break;
+
+      case 'precio_costo':
+      case 'precio_venta': {
+        const precio = parsearPrecioArgentino(valorRaw);
+        if (valorRaw != null && String(valorRaw).trim() !== '' && precio === null) {
+          errores.push({
+            campo,
+            mensaje: 'El precio debe ser un número válido',
+            valorOriginal: valorRaw,
+          });
+          datos[campo] = null;
+        } else if (precio !== null && precio < 0) {
+          errores.push({
+            campo,
+            mensaje: 'El precio no puede ser negativo',
+            valorOriginal: valorRaw,
+          });
+          datos[campo] = null;
+        } else {
+          datos[campo] = precio;
+        }
+        break;
+      }
+
+      case 'stock_actual':
+      case 'stock_minimo': {
+        const num = parsearEntero(valorRaw);
+        if (valorRaw != null && String(valorRaw).trim() !== '' && num === null) {
+          errores.push({
+            campo,
+            mensaje: 'Debe ser un número entero',
+            valorOriginal: valorRaw,
+          });
+          datos[campo] = null;
+        } else if (num !== null && num < 0) {
+          errores.push({
+            campo,
+            mensaje: 'No puede ser negativo',
+            valorOriginal: valorRaw,
+          });
+          datos[campo] = null;
+        } else {
+          datos[campo] = num;
+        }
+        break;
+      }
+
+      case 'fecha_vencimiento': {
+        if (valorRaw != null && String(valorRaw).trim() !== '') {
+          const fecha = parsearFecha(String(valorRaw));
+          if (!fecha) {
+            errores.push({
+              campo,
+              mensaje: 'Formato de fecha no reconocido',
+              valorOriginal: valorRaw,
+            });
+            datos[campo] = null;
+          } else {
+            datos[campo] = fecha;
+          }
+        } else {
+          datos[campo] = null;
+        }
+        break;
+      }
+
+      case 'categoria':
+      case 'proveedor':
+      case 'unidad':
+      case 'codigo_barras':
+      case 'rubro':
+      case 'subrubro':
+      case 'ubicacion':
+      case 'moneda':
+        datos[campo] = valorRaw != null ? String(valorRaw).trim() : null;
+        break;
+
+      case 'iva_porcentaje':
+      case 'porcentaje_ganancia': {
+        const pct = parsearPrecioArgentino(valorRaw);
+        if (valorRaw != null && String(valorRaw).trim() !== '' && pct === null) {
+          errores.push({
+            campo,
+            mensaje: 'Debe ser un número válido',
+            valorOriginal: valorRaw,
+          });
+          datos[campo] = null;
+        } else if (pct !== null && pct < 0) {
+          errores.push({
+            campo,
+            mensaje: 'No puede ser negativo',
+            valorOriginal: valorRaw,
+          });
+          datos[campo] = null;
+        } else {
+          datos[campo] = pct;
+        }
+        break;
+      }
+    }
+  }
+
+  if (!datos.nombre || String(datos.nombre).trim() === '') {
+    errores.push({
+      campo: 'nombre',
+      mensaje: 'El nombre del producto no puede estar vacío',
+      valorOriginal: null,
+    });
+    datos.nombre = null;
+  }
+
+  return {
+    filaOriginal: index + 1,
+    datos,
+    errores,
+    valida: errores.length === 0,
+  };
+}
+
 export function validarFilas(
-  filas: Record<string, string | number | null>[],
-  mapeo: { headerOriginal: string; campoDetectado: CampoProducto | null; ignorar: boolean }[]
+  filas: FilaRaw[],
+  mapeo: MapeoValidacion[]
 ): FilaValidada[] {
-  return filas.map((fila, index) => {
-    const datos: Partial<Record<CampoProducto, string | number | null>> = {};
-    const errores: FilaValidada['errores'] = [];
-
-    for (const col of mapeo) {
-      if (col.ignorar || !col.campoDetectado) continue;
-
-      const valorRaw = fila[col.headerOriginal];
-      const campo = col.campoDetectado;
-      const vacio = valorRaw == null || String(valorRaw).trim() === '';
-
-      if (campo !== 'nombre' && vacio) {
-        continue;
-      }
-
-      switch (campo) {
-        case 'codigo':
-          datos[campo] = valorRaw != null ? String(valorRaw).trim() : null;
-          break;
-
-        case 'nombre':
-          if (vacio) {
-            continue;
-          }
-          datos[campo] = String(valorRaw).trim();
-          break;
-
-        case 'precio_costo':
-        case 'precio_venta': {
-          const precio = parsearPrecioArgentino(valorRaw);
-          if (valorRaw != null && String(valorRaw).trim() !== '' && precio === null) {
-            errores.push({
-              campo,
-              mensaje: 'El precio debe ser un número válido',
-              valorOriginal: valorRaw,
-            });
-            datos[campo] = null;
-          } else if (precio !== null && precio < 0) {
-            errores.push({
-              campo,
-              mensaje: 'El precio no puede ser negativo',
-              valorOriginal: valorRaw,
-            });
-            datos[campo] = null;
-          } else {
-            datos[campo] = precio;
-          }
-          break;
-        }
-
-        case 'stock_actual':
-        case 'stock_minimo': {
-          const num = parsearEntero(valorRaw);
-          if (valorRaw != null && String(valorRaw).trim() !== '' && num === null) {
-            errores.push({
-              campo,
-              mensaje: 'Debe ser un número entero',
-              valorOriginal: valorRaw,
-            });
-            datos[campo] = null;
-          } else if (num !== null && num < 0) {
-            errores.push({
-              campo,
-              mensaje: 'No puede ser negativo',
-              valorOriginal: valorRaw,
-            });
-            datos[campo] = null;
-          } else {
-            datos[campo] = num;
-          }
-          break;
-        }
-
-        case 'fecha_vencimiento': {
-          if (valorRaw != null && String(valorRaw).trim() !== '') {
-            const fecha = parsearFecha(String(valorRaw));
-            if (!fecha) {
-              errores.push({
-                campo,
-                mensaje: 'Formato de fecha no reconocido',
-                valorOriginal: valorRaw,
-              });
-              datos[campo] = null;
-            } else {
-              datos[campo] = fecha;
-            }
-          } else {
-            datos[campo] = null;
-          }
-          break;
-        }
-
-        case 'categoria':
-        case 'proveedor':
-        case 'unidad':
-        case 'codigo_barras':
-        case 'rubro':
-        case 'subrubro':
-        case 'ubicacion':
-        case 'moneda':
-          datos[campo] = valorRaw != null ? String(valorRaw).trim() : null;
-          break;
-
-        case 'iva_porcentaje':
-        case 'porcentaje_ganancia': {
-          const pct = parsearPrecioArgentino(valorRaw);
-          if (valorRaw != null && String(valorRaw).trim() !== '' && pct === null) {
-            errores.push({
-              campo,
-              mensaje: 'Debe ser un número válido',
-              valorOriginal: valorRaw,
-            });
-            datos[campo] = null;
-          } else if (pct !== null && pct < 0) {
-            errores.push({
-              campo,
-              mensaje: 'No puede ser negativo',
-              valorOriginal: valorRaw,
-            });
-            datos[campo] = null;
-          } else {
-            datos[campo] = pct;
-          }
-          break;
-        }
-      }
-    }
-
-    if (!datos.nombre || String(datos.nombre).trim() === '') {
-      errores.push({
-        campo: 'nombre',
-        mensaje: 'El nombre del producto no puede estar vacío',
-        valorOriginal: null,
-      });
-      datos.nombre = null;
-    }
-
-    return {
-      filaOriginal: index + 1,
-      datos,
-      errores,
-      valida: errores.length === 0,
-    };
-  });
+  return filas.map((fila, index) => validarFila(fila, index, mapeo));
 }
 
 /**

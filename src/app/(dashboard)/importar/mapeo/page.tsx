@@ -15,17 +15,26 @@ export default function ImportarMapeoPage() {
   const [filasMuestra, setFilasMuestra] = useState<Record<string, string | number | null>[]>([]);
 
   useEffect(() => {
-    const d = readImportDraft();
-    if (!d) {
-      router.replace('/importar');
-      return;
-    }
-    if (d.saltoMapeoPorPerfil) {
-      router.replace('/importar/preview');
-      return;
-    }
-    setMapeo(d.mapeo);
-    setFilasMuestra(d.archivo.filas);
+    let cancelled = false;
+
+    void (async () => {
+      const d = await readImportDraft();
+      if (cancelled) return;
+      if (!d) {
+        router.replace('/importar');
+        return;
+      }
+      if (d.saltoMapeoPorPerfil) {
+        router.replace('/importar/preview');
+        return;
+      }
+      setMapeo(d.mapeo);
+      setFilasMuestra(d.archivo.filas);
+    })();
+
+    return () => {
+      cancelled = true;
+    };
   }, [router]);
 
   if (!mapeo) {
@@ -49,12 +58,12 @@ export default function ImportarMapeoPage() {
         filasMuestra={filasMuestra}
         onConfirmar={() => {
           void (async () => {
-            const d = readImportDraft();
+            const d = await readImportDraft();
             if (!d) {
               router.replace('/importar');
               return;
             }
-            writeImportDraft({ ...d, mapeo });
+            await writeImportDraft({ ...d, mapeo });
             if (d.guardarPerfil && d.proveedorId) {
               const { error } = await guardarPerfilMapeo(
                 d.proveedorId,

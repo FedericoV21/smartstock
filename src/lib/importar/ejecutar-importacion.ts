@@ -60,6 +60,11 @@ export interface EjecutarImportacionResultado {
   }[];
 }
 
+function resumirFilaParaError(fila: FilaImportacion): string {
+  const raw = JSON.stringify(fila);
+  return raw.length > 500 ? `${raw.slice(0, 497)}...` : raw;
+}
+
 export async function ejecutarImportacionFilas(
   supabase: SupabaseClient<Database>,
   ctx: { tenantId: string; userId: string },
@@ -87,6 +92,34 @@ export async function ejecutarImportacionFilas(
     .maybeSingle();
   const ivaDefault = tenantRow?.iva_porcentaje_default ?? 21;
 
+  const codigos = Array.from(
+    new Set(
+      filas
+        .map((fila) => fila.codigo?.trim())
+        .filter((codigo): codigo is string => Boolean(codigo))
+    )
+  );
+  const productosPorCodigo = new Map<
+    string,
+    Pick<
+      Database['public']['Tables']['producto']['Row'],
+      'id' | 'codigo' | 'precio_costo' | 'precio_venta' | 'stock_actual'
+    >
+  >();
+
+  if (codigos.length > 0) {
+    const { data: productosExistentes } = await supabase
+      .from('producto')
+      .select('id, codigo, precio_costo, precio_venta, stock_actual')
+      .eq('tenant_id', tenantId)
+      .eq('activo', true)
+      .in('codigo', codigos);
+
+    for (const producto of productosExistentes ?? []) {
+      productosPorCodigo.set(producto.codigo, producto);
+    }
+  }
+
   for (let i = 0; i < filas.length; i++) {
     const fila = filas[i];
 
@@ -101,11 +134,14 @@ export async function ejecutarImportacionFilas(
         if (categoriasMap.has(catNombre)) {
           categoriaId = categoriasMap.get(catNombre)!;
         } else {
-          const { data: nuevaCat } = await supabase
+          const { data: nuevaCat, error: nuevaCatError } = await supabase
             .from('categoria')
             .insert({ tenant_id: tenantId, nombre: fila.categoria })
             .select()
             .single();
+          if (nuevaCatError) {
+            throw new Error(nuevaCatError.message);
+          }
           if (nuevaCat) {
             categoriaId = nuevaCat.id;
             categoriasMap.set(catNombre, nuevaCat.id);
@@ -113,17 +149,8 @@ export async function ejecutarImportacionFilas(
         }
       }
 
-      let productoExistente = null;
-      if (fila.codigo) {
-        const { data } = await supabase
-          .from('producto')
-          .select('id, precio_costo, precio_venta, stock_actual')
-          .eq('codigo', fila.codigo)
-          .eq('tenant_id', tenantId)
-          .eq('activo', true)
-          .maybeSingle();
-        productoExistente = data;
-      }
+      const codigo = fila.codigo?.trim() || null;
+      const productoExistente = codigo ? productosPorCodigo.get(codigo) ?? null : null;
 
       if (productoExistente) {
         const updates: Database['public']['Tables']['producto']['Update'] = {
@@ -156,11 +183,14 @@ export async function ejecutarImportacionFilas(
           }
         }
 
-        await supabase
+        const { error: updateError } = await supabase
           .from('producto')
           .update(updates)
           .eq('id', productoExistente.id)
           .eq('tenant_id', tenantId);
+        if (updateError) {
+          throw new Error(updateError.message);
+        }
 
         const costoAnterior = productoExistente.precio_costo;
         const ventaAnterior = productoExistente.precio_venta;
@@ -172,7 +202,7 @@ export async function ejecutarImportacionFilas(
             costoAnterior > 0 ? ((ventaAnterior - costoAnterior) / costoAnterior) * 100 : 0;
           const margenNuevo = costoNuevo > 0 ? ((ventaNuevo - costoNuevo) / costoNuevo) * 100 : 0;
 
-          await supabase.from('precio_historial').insert({
+          const { error: historialError } = await supabase.from('precio_historial').insert({
             tenant_id: tenantId,
             producto_id: productoExistente.id,
             precio_costo_anterior: costoAnterior,
@@ -183,10 +213,13 @@ export async function ejecutarImportacionFilas(
             margen_nuevo: margenNuevo,
             origen,
           });
+          if (historialError) {
+            throw new Error(historialError.message);
+          }
         }
 
         if (fila.stock_actual != null && fila.stock_actual !== productoExistente.stock_actual) {
-          await supabase.rpc('registrar_movimiento', {
+          const { error: movimientoError } = await supabase.rpc('registrar_movimiento', {
             p_tenant_id: tenantId,
             p_producto_id: productoExistente.id,
             p_tipo: 'ajuste',
@@ -195,11 +228,14 @@ export async function ejecutarImportacionFilas(
             p_referencia_tipo: 'importacion',
             p_usuario_id: ctx.userId,
           });
+          if (movimientoError) {
+            throw new Error(movimientoError.message);
+          }
         }
 
         productosActualizados++;
       } else {
-        const codigo = fila.codigo || `AUTO-${Date.now()}-${i}`;
+        const codigoInsert = codigo || `AUTO-${Date.now()}-${i}`;
 
         const insertCosto = fila.precio_costo ?? 0;
         let insertVenta = fila.precio_venta ?? 0;
@@ -221,7 +257,7 @@ export async function ejecutarImportacionFilas(
           .from('producto')
           .insert({
             tenant_id: tenantId,
-            codigo,
+            codigo: codigoInsert,
             nombre: fila.nombre,
             categoria_id: categoriaId,
             proveedor_id: proveedor_id,
@@ -250,7 +286,7 @@ export async function ejecutarImportacionFilas(
         }
 
         if (fila.stock_actual && fila.stock_actual > 0 && nuevoProducto) {
-          await supabase.rpc('registrar_movimiento', {
+          const { error: movimientoError } = await supabase.rpc('registrar_movimiento', {
             p_tenant_id: tenantId,
             p_producto_id: nuevoProducto.id,
             p_tipo: 'entrada',
@@ -259,8 +295,20 @@ export async function ejecutarImportacionFilas(
             p_referencia_tipo: 'importacion',
             p_usuario_id: ctx.userId,
           });
+          if (movimientoError) {
+            throw new Error(movimientoError.message);
+          }
         }
 
+        if (codigo && nuevoProducto) {
+          productosPorCodigo.set(codigo, {
+            id: nuevoProducto.id,
+            codigo,
+            precio_costo: insertCosto,
+            precio_venta: insertVenta,
+            stock_actual: fila.stock_actual ?? 0,
+          });
+        }
         productosCreados++;
       }
     } catch (err) {
@@ -268,7 +316,7 @@ export async function ejecutarImportacionFilas(
       detalleErrores.push({
         fila: i + 1,
         campo: 'general',
-        valor_original: JSON.stringify(fila),
+        valor_original: resumirFilaParaError(fila),
         error: (err as Error).message,
       });
     }

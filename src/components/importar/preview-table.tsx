@@ -75,10 +75,14 @@ interface Props {
     filaIndices: number[]
   ) => void;
   sugerenciasVentaPorFila?: (SugerenciaVentaFila | null)[];
+  statusText?: string | null;
 }
 
 const inputSm =
   'h-8 rounded-md border border-input bg-background px-2 text-xs shadow-sm outline-none focus-visible:ring-2 focus-visible:ring-ring';
+const VIRTUALIZATION_THRESHOLD = 150;
+const VIRTUAL_ROW_HEIGHT = 56;
+const VIRTUAL_OVERSCAN = 8;
 
 export function PreviewTable({
   filas,
@@ -93,9 +97,10 @@ export function PreviewTable({
   onBulkFill,
   onCalcularVentaPorMargen,
   sugerenciasVentaPorFila,
+  statusText,
 }: Props) {
-  const filasValidas = filas.filter((f) => f.valida);
-  const filasConError = filas.filter((f) => !f.valida);
+  const filasValidas = useMemo(() => filas.filter((f) => f.valida), [filas]);
+  const filasConError = useMemo(() => filas.filter((f) => !f.valida), [filas]);
 
   const camposYaMapeados = useMemo(() => new Set(columnas.map((c) => c.campo)), [columnas]);
   const camposDisponiblesParaAgregar = useMemo(
@@ -112,8 +117,11 @@ export function PreviewTable({
     const v = columnas.find((c) => c.campo === 'precio_venta');
     return v?.headerOriginal ?? '';
   });
+  const [scrollTop, setScrollTop] = useState(0);
+  const [viewportHeight, setViewportHeight] = useState(560);
 
   const headerSelectRef = useRef<HTMLInputElement>(null);
+  const scrollContainerRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
     if (camposDisponiblesParaAgregar.length === 0) return;
@@ -160,9 +168,43 @@ export function PreviewTable({
     el.indeterminate = selected.size > 0 && selected.size < filas.length;
   }, [selected, filas.length]);
 
+  useEffect(() => {
+    const el = scrollContainerRef.current;
+    if (!el) return;
+
+    const updateHeight = () => setViewportHeight(el.clientHeight || 560);
+    updateHeight();
+
+    if (typeof ResizeObserver === 'undefined') {
+      window.addEventListener('resize', updateHeight);
+      return () => window.removeEventListener('resize', updateHeight);
+    }
+
+    const observer = new ResizeObserver(() => updateHeight());
+    observer.observe(el);
+    return () => observer.disconnect();
+  }, []);
+
   const selectedArr = useMemo(() => Array.from(selected).sort((a, b) => a - b), [selected]);
   const nSel = selected.size;
   const canBulk = nSel > 0 && bulkHeader;
+  const shouldVirtualize = filas.length > VIRTUALIZATION_THRESHOLD;
+  const totalColumns = columnas.length + 4;
+  const startIndex = shouldVirtualize
+    ? Math.max(0, Math.floor(scrollTop / VIRTUAL_ROW_HEIGHT) - VIRTUAL_OVERSCAN)
+    : 0;
+  const visibleCount = shouldVirtualize
+    ? Math.ceil(viewportHeight / VIRTUAL_ROW_HEIGHT) + VIRTUAL_OVERSCAN * 2
+    : filas.length;
+  const endIndex = shouldVirtualize ? Math.min(filas.length, startIndex + visibleCount) : filas.length;
+  const topSpacerHeight = shouldVirtualize ? startIndex * VIRTUAL_ROW_HEIGHT : 0;
+  const bottomSpacerHeight = shouldVirtualize ? Math.max(0, (filas.length - endIndex) * VIRTUAL_ROW_HEIGHT) : 0;
+  const filasVisibles = shouldVirtualize
+    ? filas.slice(startIndex, endIndex).map((fila, offset) => ({
+        fila,
+        rowIndex: startIndex + offset,
+      }))
+    : filas.map((fila, rowIndex) => ({ fila, rowIndex }));
 
   function toggleRow(i: number) {
     setSelected((s) => {
@@ -335,7 +377,12 @@ export function PreviewTable({
       </div>
 
       <div className="overflow-x-auto rounded-lg border">
-        <table className="w-full text-sm">
+        <div
+          ref={scrollContainerRef}
+          className="max-h-[68vh] overflow-auto"
+          onScroll={(e) => setScrollTop(e.currentTarget.scrollTop)}
+        >
+          <table className="w-full text-sm">
           <thead>
             <tr className="bg-muted/80">
               <th className="w-9 px-1 py-1.5">
@@ -376,7 +423,12 @@ export function PreviewTable({
             </tr>
           </thead>
           <tbody>
-            {filas.map((fila, i) => (
+            {topSpacerHeight > 0 ? (
+              <tr aria-hidden>
+                <td colSpan={totalColumns} className="p-0" style={{ height: topSpacerHeight }} />
+              </tr>
+            ) : null}
+            {filasVisibles.map(({ fila, rowIndex: i }) => (
               <tr
                 key={`${fila.filaOriginal}-${i}`}
                 className={`border-t ${!fila.valida ? 'bg-red-50/80' : 'hover:bg-muted/40'} ${selected.has(i) ? 'bg-primary/5' : ''}`}
@@ -451,11 +503,30 @@ export function PreviewTable({
                 </td>
               </tr>
             ))}
+            {bottomSpacerHeight > 0 ? (
+              <tr aria-hidden>
+                <td
+                  colSpan={totalColumns}
+                  className="p-0"
+                  style={{ height: bottomSpacerHeight }}
+                />
+              </tr>
+            ) : null}
           </tbody>
         </table>
+        </div>
       </div>
 
-      <div className="flex justify-end">
+      <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
+        <div className="space-y-1">
+          {shouldVirtualize ? (
+            <p className="text-xs text-muted-foreground">
+              Preview optimizado: se renderizan solo las filas visibles para mantener fluida la
+              navegación.
+            </p>
+          ) : null}
+          {statusText ? <p className="text-xs text-muted-foreground">{statusText}</p> : null}
+        </div>
         <button
           type="button"
           onClick={onConfirmar}
