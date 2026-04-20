@@ -45,6 +45,7 @@ export async function POST() {
         .select('numero')
         .eq('tenant_id', session.tenantId)
         .eq('tipo', tipo)
+        .neq('estado', 'error_arca')
         .order('numero', { ascending: false })
         .limit(1)
         .maybeSingle();

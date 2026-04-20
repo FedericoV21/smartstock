@@ -1,6 +1,6 @@
 'use client';
 
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 
 import { useDashboardRole } from '@/components/dashboard/dashboard-role-context';
 import { Button } from '@/components/ui/button';
@@ -13,6 +13,12 @@ import {
   SelectValue,
 } from '@/components/ui/select';
 import { useModulos } from '@/hooks/useModulos';
+import {
+  loadPosPrefs,
+  normalizePosPrefs,
+  savePosPrefs,
+  type PosPrefs,
+} from '@/lib/pos/prefs';
 
 type TenantData = {
   id: string;
@@ -21,10 +27,12 @@ type TenantData = {
   cuit: string | null;
   domicilio: string | null;
   telefono: string | null;
+  horarios_atencion: string | null;
   email: string | null;
   condicion_iva: string | null;
   punto_de_venta: number;
   plan: string;
+  logo_url: string | null;
 };
 
 const CONDICION_IVA_LABELS: Record<string, string> = {
@@ -34,53 +42,35 @@ const CONDICION_IVA_LABELS: Record<string, string> = {
   consumidor_final: 'Consumidor Final',
 };
 
-type PosPrefs = {
-  sonidos: boolean;
-  anchoTicket: '80mm' | '57mm';
-  stockBloqueante: boolean;
-};
-
-const POS_PREFS_KEY = 'smartstock_pos_prefs';
-
-function loadPosPrefs(): PosPrefs {
-  if (typeof window === 'undefined') return { sonidos: true, anchoTicket: '80mm', stockBloqueante: false };
-  try {
-    const raw = localStorage.getItem(POS_PREFS_KEY);
-    if (raw) return JSON.parse(raw) as PosPrefs;
-  } catch { /* ignore */ }
-  return { sonidos: true, anchoTicket: '80mm', stockBloqueante: false };
-}
-
-function savePosPrefs(prefs: PosPrefs) {
-  if (typeof window === 'undefined') return;
-  localStorage.setItem(POS_PREFS_KEY, JSON.stringify(prefs));
-}
-
 export default function ConfiguracionPage() {
-  const { canEdit } = useDashboardRole();
+  const { canEdit, isAdmin } = useDashboardRole();
   const { modulos } = useModulos();
+  const logoInputRef = useRef<HTMLInputElement>(null);
   const [tenant, setTenant] = useState<TenantData | null>(null);
   const [loading, setLoading] = useState(true);
   const [editMode, setEditMode] = useState(false);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [success, setSuccess] = useState(false);
+  const [logoUploading, setLogoUploading] = useState(false);
+  const [logoError, setLogoError] = useState<string | null>(null);
 
   const [nombre, setNombre] = useState('');
   const [razonSocial, setRazonSocial] = useState('');
   const [cuit, setCuit] = useState('');
   const [domicilio, setDomicilio] = useState('');
   const [telefono, setTelefono] = useState('');
+  const [horariosAtencion, setHorariosAtencion] = useState('');
   const [email, setEmail] = useState('');
   const [condicionIva, setCondicionIva] = useState('');
   const [puntoDeVenta, setPuntoDeVenta] = useState('1');
 
   // POS preferences (localStorage)
-  const [posPrefs, setPosPrefs] = useState<PosPrefs>(loadPosPrefs);
+  const [posPrefs, setPosPrefs] = useState<PosPrefs>(() => loadPosPrefs());
 
   function updatePosPrefs(partial: Partial<PosPrefs>) {
     setPosPrefs((prev) => {
-      const updated = { ...prev, ...partial };
+      const updated = normalizePosPrefs({ ...prev, ...partial });
       savePosPrefs(updated);
       return updated;
     });
@@ -100,6 +90,7 @@ export default function ConfiguracionPage() {
       setCuit(json.cuit ?? '');
       setDomicilio(json.domicilio ?? '');
       setTelefono(json.telefono ?? '');
+      setHorariosAtencion(json.horarios_atencion ?? '');
       setEmail(json.email ?? '');
       setCondicionIva(json.condicion_iva ?? '');
       setPuntoDeVenta(String(json.punto_de_venta ?? 1));
@@ -110,6 +101,36 @@ export default function ConfiguracionPage() {
   useEffect(() => {
     void load();
   }, [load]);
+
+  async function handleLogoFile(file: File | null) {
+    if (!file || !isAdmin) return;
+    setLogoError(null);
+    setLogoUploading(true);
+    const fd = new FormData();
+    fd.set('file', file);
+    const res = await fetch('/api/configuracion/logo', { method: 'POST', body: fd });
+    const json = await res.json().catch(() => ({}));
+    setLogoUploading(false);
+    if (!res.ok) {
+      setLogoError(typeof json.error === 'string' ? json.error : 'No se pudo subir el logo');
+      return;
+    }
+    await load();
+  }
+
+  async function handleLogoRemove() {
+    if (!isAdmin) return;
+    setLogoError(null);
+    setLogoUploading(true);
+    const res = await fetch('/api/configuracion/logo', { method: 'DELETE' });
+    const json = await res.json().catch(() => ({}));
+    setLogoUploading(false);
+    if (!res.ok) {
+      setLogoError(typeof json.error === 'string' ? json.error : 'No se pudo quitar el logo');
+      return;
+    }
+    await load();
+  }
 
   async function handleSave() {
     if (!nombre.trim()) return;
@@ -126,6 +147,7 @@ export default function ConfiguracionPage() {
         cuit: cuit || null,
         domicilio: domicilio || null,
         telefono: telefono || null,
+        horarios_atencion: horariosAtencion || null,
         email: email || null,
         condicion_iva: condicionIva || null,
         punto_de_venta: parseInt(puntoDeVenta) || 1,
@@ -158,7 +180,7 @@ export default function ConfiguracionPage() {
       <div>
         <h1 className="text-2xl font-semibold tracking-tight">Configuración</h1>
         <p className="mt-1 text-sm text-muted-foreground">
-          Datos fiscales de tu negocio. Se usan en la emisión de comprobantes.
+          Datos fiscales y de contacto de tu negocio. Los fiscales se usan en comprobantes.
         </p>
       </div>
 
@@ -225,14 +247,28 @@ export default function ConfiguracionPage() {
                 onChange={(e) => setDomicilio(e.target.value)}
               />
             </label>
-            <label className="grid gap-1 text-sm">
-              <span className="text-muted-foreground">Teléfono</span>
+            <label className="grid gap-1 text-sm sm:col-span-2">
+              <span className="text-muted-foreground">Número de teléfono</span>
               <Input
+                type="tel"
+                inputMode="tel"
+                autoComplete="tel"
+                placeholder="Ej. 11 2345-6789"
                 value={telefono}
                 onChange={(e) => setTelefono(e.target.value)}
               />
             </label>
-            <label className="grid gap-1 text-sm">
+            <label className="grid gap-1 text-sm sm:col-span-2">
+              <span className="text-muted-foreground">Horarios de atención</span>
+              <textarea
+                value={horariosAtencion}
+                onChange={(e) => setHorariosAtencion(e.target.value)}
+                placeholder="Ej. Lun a Vie 9–18 hs, Sáb 9–13 hs"
+                rows={3}
+                className="w-full rounded-md border border-input bg-transparent px-3 py-2 text-sm shadow-xs transition-colors focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring"
+              />
+            </label>
+            <label className="grid gap-1 text-sm sm:col-span-2">
               <span className="text-muted-foreground">Email</span>
               <Input
                 type="email"
@@ -293,11 +329,15 @@ export default function ConfiguracionPage() {
               <dt className="text-muted-foreground">Domicilio</dt>
               <dd>{tenant?.domicilio ?? '—'}</dd>
             </div>
-            <div>
-              <dt className="text-muted-foreground">Teléfono</dt>
+            <div className="sm:col-span-2">
+              <dt className="text-muted-foreground">Número de teléfono</dt>
               <dd>{tenant?.telefono ?? '—'}</dd>
             </div>
-            <div>
+            <div className="sm:col-span-2">
+              <dt className="text-muted-foreground">Horarios de atención</dt>
+              <dd className="whitespace-pre-wrap">{tenant?.horarios_atencion ?? '—'}</dd>
+            </div>
+            <div className="sm:col-span-2">
               <dt className="text-muted-foreground">Email</dt>
               <dd>{tenant?.email ?? '—'}</dd>
             </div>
@@ -317,6 +357,73 @@ export default function ConfiguracionPage() {
             </div>
           </dl>
         )}
+      </section>
+
+      <section className="rounded-xl border bg-card p-5 shadow-sm">
+        <h2 className="font-medium">Logo en tickets (POS)</h2>
+        <p className="mt-1 text-sm text-muted-foreground">
+          PNG con fondo transparente o imagen con fondo blanco (también JPG o WebP). Se muestra arriba del nombre en el ticket térmico. Máximo 2 MB.
+        </p>
+        {logoError ? <p className="mt-2 text-sm text-destructive">{logoError}</p> : null}
+        <div className="mt-4 flex flex-wrap items-end gap-4">
+          <div
+            className="flex h-24 w-40 items-center justify-center rounded-lg border bg-muted/40"
+            style={{
+              backgroundImage:
+                'linear-gradient(45deg, #e5e5e5 25%, transparent 25%), linear-gradient(-45deg, #e5e5e5 25%, transparent 25%), linear-gradient(45deg, transparent 75%, #e5e5e5 75%), linear-gradient(-45deg, transparent 75%, #e5e5e5 75%)',
+              backgroundSize: '12px 12px',
+              backgroundPosition: '0 0, 0 6px, 6px -6px, -6px 0',
+            }}
+          >
+            {tenant?.logo_url ? (
+              <img
+                src={tenant.logo_url}
+                alt="Logo actual"
+                className="max-h-[5.5rem] max-w-[9.5rem] object-contain"
+              />
+            ) : (
+              <span className="text-xs text-muted-foreground px-2 text-center">Sin logo</span>
+            )}
+          </div>
+          {isAdmin ? (
+            <div className="flex flex-wrap gap-2">
+              <input
+                ref={logoInputRef}
+                type="file"
+                accept="image/png,image/jpeg,image/webp"
+                className="hidden"
+                onChange={(e) => {
+                  const f = e.target.files?.[0] ?? null;
+                  e.target.value = '';
+                  void handleLogoFile(f);
+                }}
+              />
+              <Button
+                type="button"
+                variant="outline"
+                size="sm"
+                disabled={logoUploading}
+                onClick={() => logoInputRef.current?.click()}
+              >
+                {logoUploading ? 'Subiendo…' : tenant?.logo_url ? 'Cambiar logo' : 'Subir logo'}
+              </Button>
+              {tenant?.logo_url ? (
+                <Button
+                  type="button"
+                  variant="ghost"
+                  size="sm"
+                  className="text-destructive hover:text-destructive"
+                  disabled={logoUploading}
+                  onClick={() => void handleLogoRemove()}
+                >
+                  Quitar
+                </Button>
+              ) : null}
+            </div>
+          ) : (
+            <p className="text-sm text-muted-foreground">Solo el administrador puede subir el logo.</p>
+          )}
+        </div>
       </section>
 
       {modulos.facturador_pos && (
@@ -362,6 +469,58 @@ export default function ConfiguracionPage() {
               />
               Bloquear ventas sin stock suficiente
             </label>
+
+            <div className="sm:col-span-2 border-t pt-4 mt-1 space-y-3">
+              <p className="text-sm font-medium">Tipo de comprobante en el POS</p>
+              <p className="text-xs text-muted-foreground">
+                Definí si en esta caja podés cobrar en ticket (negro), en factura (blanco) o ambos, y cuál se elige al abrir el POS.
+              </p>
+              <label className="flex items-center gap-3 text-sm">
+                <input
+                  type="checkbox"
+                  checked={posPrefs.aceptaTicket}
+                  onChange={(e) => updatePosPrefs({ aceptaTicket: e.target.checked })}
+                  className="size-4 rounded border-input"
+                />
+                Permitir cobrar en ticket (negro)
+              </label>
+              <label className="flex items-center gap-3 text-sm">
+                <input
+                  type="checkbox"
+                  checked={posPrefs.aceptaFactura}
+                  onChange={(e) => updatePosPrefs({ aceptaFactura: e.target.checked })}
+                  className="size-4 rounded border-input"
+                />
+                Permitir cobrar en factura (blanco)
+              </label>
+              <label className="grid gap-1 text-sm max-w-xs">
+                <span className="text-muted-foreground">Comprobante por defecto al abrir el POS</span>
+                <Select
+                  value={posPrefs.comprobantePredeterminado}
+                  onValueChange={(v) =>
+                    updatePosPrefs({ comprobantePredeterminado: v as 'ticket' | 'factura' })
+                  }
+                  disabled={!posPrefs.aceptaTicket || !posPrefs.aceptaFactura}
+                >
+                  <SelectTrigger>
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {posPrefs.aceptaTicket ? (
+                      <SelectItem value="ticket">Ticket (negro)</SelectItem>
+                    ) : null}
+                    {posPrefs.aceptaFactura ? (
+                      <SelectItem value="factura">Factura (blanco)</SelectItem>
+                    ) : null}
+                  </SelectContent>
+                </Select>
+                {!posPrefs.aceptaTicket || !posPrefs.aceptaFactura ? (
+                  <span className="text-xs text-muted-foreground">
+                    Solo aplica cuando ambos tipos están habilitados; si hay uno solo, el POS usa ese.
+                  </span>
+                ) : null}
+              </label>
+            </div>
           </div>
         </section>
       )}

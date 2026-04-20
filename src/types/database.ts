@@ -1362,6 +1362,7 @@ export type Database = {
           cuit: string | null;
           domicilio: string | null;
           email: string | null;
+          horarios_atencion: string | null;
           id: string;
           iva_porcentaje_default: number;
           logo_url: string | null;
@@ -1379,6 +1380,7 @@ export type Database = {
           cuit?: string | null;
           domicilio?: string | null;
           email?: string | null;
+          horarios_atencion?: string | null;
           id?: string;
           iva_porcentaje_default?: number;
           logo_url?: string | null;
@@ -1396,6 +1398,7 @@ export type Database = {
           cuit?: string | null;
           domicilio?: string | null;
           email?: string | null;
+          horarios_atencion?: string | null;
           id?: string;
           iva_porcentaje_default?: number;
           logo_url?: string | null;

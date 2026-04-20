@@ -1,12 +1,19 @@
 import type { SupabaseClient } from '@supabase/supabase-js';
 
 import { calcularImportes } from '@/lib/facturacion/calcular-importes';
-import { solicitarCAE } from '@/lib/facturacion/arca/wsfe';
+import { consultarUltimoComprobante, solicitarCAE } from '@/lib/facturacion/arca/wsfe';
 import { formatearTipoComprobante } from '@/lib/facturacion/formato';
 import { generarPDF } from '@/lib/facturacion/pdf-generator';
+import { determinarTipoFactura } from '@/lib/facturacion/tipo-comprobante';
+import { hoyEnAR } from '@/lib/utils/formatters';
 import type { Database } from '@/types/database';
 
 type TipoComprobante = Database['public']['Enums']['tipo_comprobante'];
+type CondicionIVA = Parameters<typeof determinarTipoFactura>[0];
+type ArcaConfigEmision = Pick<
+  Database['public']['Tables']['arca_config']['Row'],
+  'tenant_id' | 'cuit_emisor' | 'punto_de_venta' | 'ambiente'
+>;
 
 type ClienteFacturaSnapshot = Pick<
   Database['public']['Tables']['cliente']['Row'],
@@ -35,6 +42,171 @@ export type EmitirComprobanteSuccess = {
 export type EmitirComprobanteResult =
   | { ok: true; data: EmitirComprobanteSuccess }
   | { ok: false; status: number; error: string };
+
+function requiereAutorizacionArca(tipo: string): boolean {
+  return (
+    tipo === 'factura' ||
+    tipo === 'nota_credito' ||
+    tipo.startsWith('factura_') ||
+    tipo.startsWith('nota_credito_')
+  );
+}
+
+function normalizarCondicionIVA(value: string | null | undefined): CondicionIVA {
+  switch (value) {
+    case 'responsable_inscripto':
+    case 'monotributista':
+    case 'exento':
+    case 'consumidor_final':
+      return value;
+    default:
+      return 'consumidor_final';
+  }
+}
+
+function resolverTipoComprobante(
+  tipo: string,
+  tenantCondicionIva: string | null | undefined,
+  clienteCondicionIva: string | null | undefined,
+): string {
+  if (tipo === 'factura') {
+    return determinarTipoFactura(
+      normalizarCondicionIVA(tenantCondicionIva),
+      normalizarCondicionIVA(clienteCondicionIva),
+    );
+  }
+
+  if (tipo === 'nota_credito') {
+    const tipoFactura = determinarTipoFactura(
+      normalizarCondicionIVA(tenantCondicionIva),
+      normalizarCondicionIVA(clienteCondicionIva),
+    );
+    return tipoFactura.replace('factura_', 'nota_credito_');
+  }
+
+  return tipo;
+}
+
+async function obtenerSiguienteNumeroLocal(
+  supabase: SupabaseClient<Database>,
+  tenantId: string,
+  tipo: TipoComprobante,
+): Promise<number> {
+  const { data, error } = await supabase.rpc('siguiente_numero_comprobante', {
+    p_tenant_id: tenantId,
+    p_tipo: tipo,
+  });
+
+  if (error) {
+    throw new Error(`Error al obtener número: ${error.message}`);
+  }
+
+  return data;
+}
+
+async function obtenerNumeroArchivado(
+  supabase: SupabaseClient<Database>,
+  tenantId: string,
+  tipo: TipoComprobante,
+): Promise<number> {
+  const { data, error } = await supabase
+    .from('comprobante')
+    .select('numero')
+    .eq('tenant_id', tenantId)
+    .eq('tipo', tipo)
+    .lt('numero', 0)
+    .order('numero', { ascending: true })
+    .limit(1)
+    .maybeSingle();
+
+  if (error) {
+    throw new Error(`Error al reservar numeración archivada: ${error.message}`);
+  }
+
+  return (data?.numero ?? 0) - 1;
+}
+
+async function liberarNumeroConflictuanteErrorArca(
+  supabase: SupabaseClient<Database>,
+  tenantId: string,
+  tipo: TipoComprobante,
+  numero: number,
+): Promise<string | null> {
+  const { data: conflicto, error } = await supabase
+    .from('comprobante')
+    .select('id, numero, estado, cae, notas')
+    .eq('tenant_id', tenantId)
+    .eq('tipo', tipo)
+    .eq('numero', numero)
+    .maybeSingle();
+
+  if (error) {
+    throw new Error(`Error al verificar conflictos de numeración: ${error.message}`);
+  }
+
+  if (!conflicto) return null;
+
+  if (conflicto.estado !== 'error_arca' || conflicto.cae) {
+    return `Ya existe un comprobante local con el número ${numero}. Revisá la numeración antes de reintentar.`;
+  }
+
+  const numeroArchivado = await obtenerNumeroArchivado(supabase, tenantId, tipo);
+  const notaArchivo = [
+    conflicto.notas?.trim(),
+    `[SmartStock] Registro archivado localmente como ${numeroArchivado} para liberar la numeración fiscal ${numero} tras un rechazo de ARCA.`,
+  ]
+    .filter(Boolean)
+    .join('\n\n');
+
+  const { error: updateError } = await supabase
+    .from('comprobante')
+    .update({
+      numero: numeroArchivado,
+      notas: notaArchivo,
+    })
+    .eq('id', conflicto.id);
+
+  if (updateError) {
+    throw new Error(`Error al liberar número fiscal: ${updateError.message}`);
+  }
+
+  return null;
+}
+
+async function obtenerNumeroComprobanteParaEmision(
+  supabase: SupabaseClient<Database>,
+  ctx: { tenantId: string },
+  tipo: TipoComprobante,
+  arcaConfig: ArcaConfigEmision | null,
+): Promise<{ numero: number } | { error: string }> {
+  if (!arcaConfig) {
+    return { numero: await obtenerSiguienteNumeroLocal(supabase, ctx.tenantId, tipo) };
+  }
+
+  let ultimoAutorizado: number;
+  try {
+    ultimoAutorizado = await consultarUltimoComprobante(supabase, arcaConfig, tipo);
+  } catch (error) {
+    const mensaje = error instanceof Error ? error.message : String(error);
+    return {
+      error: `No se pudo consultar la numeración ARCA para ${formatearTipoComprobante(tipo)}: ${mensaje}`,
+    };
+  }
+
+  const numero = ultimoAutorizado + 1;
+  const conflicto = await liberarNumeroConflictuanteErrorArca(
+    supabase,
+    ctx.tenantId,
+    tipo,
+    numero,
+  );
+
+  if (conflicto) {
+    return { error: conflicto };
+  }
+
+  return { numero };
+}
 
 export async function emitirComprobante(
   supabase: SupabaseClient<Database>,
@@ -86,6 +258,12 @@ export async function emitirComprobante(
     cliente = clienteDb;
   }
 
+  const tipoComprobante = resolverTipoComprobante(
+    body.tipo,
+    (tenant as { condicion_iva?: string | null }).condicion_iva,
+    cliente.condicion_iva,
+  );
+
   const productoIds = body.items.map((i) => i.producto_id);
   const { data: productos } = await supabase
     .from('producto')
@@ -98,7 +276,7 @@ export async function emitirComprobante(
 
   const productosMap = new Map(productos.map((p) => [p.id, p]));
 
-  const esPresupuesto = body.tipo === 'presupuesto';
+  const esPresupuesto = tipoComprobante === 'presupuesto';
   if (!esPresupuesto && !omitirMovimientosStock) {
     for (const item of body.items) {
       const prod = productosMap.get(item.producto_id)!;
@@ -123,28 +301,65 @@ export async function emitirComprobante(
     };
   });
 
-  const importes = calcularImportes(itemsConIva, body.tipo, ivaFallback);
+  const importes = calcularImportes(itemsConIva, tipoComprobante, ivaFallback);
 
-  const { data: numero, error: numError } = await supabase.rpc('siguiente_numero_comprobante', {
-    p_tenant_id: ctx.tenantId,
-    p_tipo: body.tipo as TipoComprobante,
-  });
+  const { data: moduloConfig } = await supabase
+    .from('modulo_config')
+    .select('facturador_arca')
+    .maybeSingle();
 
-  if (numError) {
+  const arcaActivo = moduloConfig && (moduloConfig as Record<string, boolean>).facturador_arca;
+  const requiereArca = arcaActivo && requiereAutorizacionArca(tipoComprobante);
+
+  let arcaConfig: ArcaConfigEmision | null = null;
+  if (requiereArca) {
+    const { data } = await supabase
+      .from('arca_config')
+      .select('tenant_id, cuit_emisor, punto_de_venta, ambiente')
+      .eq('tenant_id', ctx.tenantId)
+      .maybeSingle();
+
+    if (data?.cuit_emisor && data.punto_de_venta) {
+      arcaConfig = data;
+    }
+  }
+
+  let numero: number;
+  try {
+    const numeroResult = await obtenerNumeroComprobanteParaEmision(
+      supabase,
+      ctx,
+      tipoComprobante as TipoComprobante,
+      arcaConfig,
+    );
+
+    if ('error' in numeroResult) {
+      return {
+        ok: false,
+        status: 409,
+        error: numeroResult.error,
+      };
+    }
+
+    numero = numeroResult.numero;
+  } catch (error) {
+    const mensaje = error instanceof Error ? error.message : String(error);
     return {
       ok: false,
       status: 500,
-      error: `Error al obtener número: ${numError.message}`,
+      error: mensaje,
     };
   }
+
+  const puntoDeVentaComprobante = arcaConfig?.punto_de_venta ?? tenant.punto_de_venta ?? 1;
 
   const { data: comprobante, error: compError } = await supabase
     .from('comprobante')
     .insert({
       tenant_id: ctx.tenantId,
-      tipo: body.tipo as never,
+      tipo: tipoComprobante as never,
       numero,
-      fecha: new Date().toISOString().split('T')[0],
+      fecha: hoyEnAR(),
       cliente_id: body.cliente_id || null,
       subtotal: importes.subtotal,
       iva_monto: importes.iva_monto,
@@ -180,7 +395,7 @@ export async function emitirComprobante(
   }
 
   if (!esPresupuesto && !omitirMovimientosStock) {
-    const esNotaCredito = body.tipo.startsWith('nota_credito');
+    const esNotaCredito = tipoComprobante.startsWith('nota_credito');
     const tipoMov = esNotaCredito ? 'entrada' : 'salida';
 
     for (const item of body.items) {
@@ -189,7 +404,7 @@ export async function emitirComprobante(
         p_producto_id: item.producto_id,
         p_tipo: tipoMov,
         p_cantidad: item.cantidad,
-        p_motivo: `${formatearTipoComprobante(body.tipo)} #${numero}`,
+        p_motivo: `${formatearTipoComprobante(tipoComprobante)} #${numero}`,
         p_referencia_tipo: 'factura',
         p_referencia_id: comprobante.id,
         p_usuario_id: ctx.userId,
@@ -202,7 +417,7 @@ export async function emitirComprobante(
   }
 
   if (!esPresupuesto && body.cliente_id) {
-    const esNotaCredito = body.tipo.startsWith('nota_credito');
+    const esNotaCredito = tipoComprobante.startsWith('nota_credito');
     const deltaDeuda = esNotaCredito ? -importes.total : importes.total;
 
     await supabase
@@ -252,7 +467,7 @@ export async function emitirComprobante(
         cuit: tenant.cuit,
         domicilio: tenant.domicilio,
         condicion_iva: tenant.condicion_iva ?? 'consumidor_final',
-        punto_de_venta: tenant.punto_de_venta,
+        punto_de_venta: puntoDeVentaComprobante,
       },
       {
         nombre: cliente.nombre,
@@ -262,7 +477,7 @@ export async function emitirComprobante(
         direccion: cliente.direccion,
       },
       {
-        tipo: body.tipo,
+        tipo: tipoComprobante,
         numero,
         fecha: comprobante.fecha,
         subtotal: importes.subtotal,
@@ -277,7 +492,7 @@ export async function emitirComprobante(
     );
 
     const pdfBuffer = Buffer.from(pdf.output('arraybuffer'));
-    const pdfPath = `${ctx.tenantId}/comprobantes/${body.tipo}_${numero}.pdf`;
+    const pdfPath = `${ctx.tenantId}/comprobantes/${tipoComprobante}_${numero}.pdf`;
 
     const { error: uploadError } = await supabase.storage
       .from('comprobantes')
@@ -297,32 +512,13 @@ export async function emitirComprobante(
   let cae: string | null = null;
   let caeVencimiento: string | null = null;
 
-  const { data: moduloConfig } = await supabase
-    .from('modulo_config')
-    .select('facturador_arca')
-    .maybeSingle();
-
-  const arcaActivo = moduloConfig && (moduloConfig as Record<string, boolean>).facturador_arca;
-
-  if (arcaActivo) {
-    const { data: arcaConfig } = await supabase
-      .from('arca_config')
-      .select('tenant_id, cuit_emisor, punto_de_venta, ambiente')
-      .eq('tenant_id', ctx.tenantId)
-      .single();
-
-    if (arcaConfig && arcaConfig.cuit_emisor && arcaConfig.punto_de_venta) {
+  if (requiereArca && arcaConfig) {
       const resultado = await solicitarCAE(
         supabase,
-        {
-          tenant_id: arcaConfig.tenant_id,
-          cuit_emisor: arcaConfig.cuit_emisor,
-          punto_de_venta: arcaConfig.punto_de_venta,
-          ambiente: arcaConfig.ambiente,
-        },
+        arcaConfig,
         {
           tenantId: ctx.tenantId,
-          tipo: body.tipo,
+          tipo: tipoComprobante,
           numero,
           fecha: comprobante.fecha,
           clienteCuitDni: cliente.cuit_dni || null,
@@ -369,7 +565,7 @@ export async function emitirComprobante(
               cuit: tenant.cuit,
               domicilio: tenant.domicilio,
               condicion_iva: tenant.condicion_iva ?? 'consumidor_final',
-              punto_de_venta: tenant.punto_de_venta,
+              punto_de_venta: puntoDeVentaComprobante,
             },
             {
               nombre: cliente.nombre,
@@ -379,7 +575,7 @@ export async function emitirComprobante(
               direccion: cliente.direccion,
             },
             {
-              tipo: body.tipo,
+              tipo: tipoComprobante,
               numero,
               fecha: comprobante.fecha,
               subtotal: importes.subtotal,
@@ -394,7 +590,7 @@ export async function emitirComprobante(
           );
 
           const pdfBufferCae = Buffer.from(pdfConCAE.output('arraybuffer'));
-          const pdfPathCae = `${ctx.tenantId}/comprobantes/${body.tipo}_${numero}.pdf`;
+          const pdfPathCae = `${ctx.tenantId}/comprobantes/${tipoComprobante}_${numero}.pdf`;
 
           const { error: uploadErr } = await supabase.storage
             .from('comprobantes')
@@ -420,7 +616,6 @@ export async function emitirComprobante(
           .update({ estado: 'error_arca' as never })
           .eq('id', comprobante.id);
       }
-    }
   }
 
   return {

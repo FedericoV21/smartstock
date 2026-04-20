@@ -45,10 +45,11 @@ export async function obtenerTicketAcceso(
   }
 
   const responseXml = await response.text();
+  const payloadXml = extraerLoginTicketResponse(responseXml);
 
-  const tokenMatch = responseXml.match(/<token>([\s\S]*?)<\/token>/);
-  const signMatch = responseXml.match(/<sign>([\s\S]*?)<\/sign>/);
-  const expMatch = responseXml.match(/<expirationTime>([\s\S]*?)<\/expirationTime>/);
+  const tokenMatch = payloadXml.match(/<token>([\s\S]*?)<\/token>/);
+  const signMatch = payloadXml.match(/<sign>([\s\S]*?)<\/sign>/);
+  const expMatch = payloadXml.match(/<expirationTime>([\s\S]*?)<\/expirationTime>/);
 
   if (!tokenMatch || !signMatch) {
     const faultMatch = responseXml.match(/<faultstring>([\s\S]*?)<\/faultstring>/);
@@ -83,6 +84,25 @@ function formatDateARCA(date: Date): string {
   const shiftedDate = new Date(date.getTime() + arcaOffsetMinutes * 60 * 1000);
   const iso = shiftedDate.toISOString().replace('Z', '');
   return `${iso.substring(0, 19)}-03:00`;
+}
+
+function extraerLoginTicketResponse(responseXml: string): string {
+  const loginCmsReturnMatch = responseXml.match(/<loginCmsReturn>([\s\S]*?)<\/loginCmsReturn>/);
+
+  if (!loginCmsReturnMatch) {
+    return responseXml;
+  }
+
+  return decodeXmlEntities(loginCmsReturnMatch[1]);
+}
+
+function decodeXmlEntities(value: string): string {
+  return value
+    .replace(/&lt;/g, '<')
+    .replace(/&gt;/g, '>')
+    .replace(/&quot;/g, '"')
+    .replace(/&apos;/g, "'")
+    .replace(/&amp;/g, '&');
 }
 
 function firmarCMS(

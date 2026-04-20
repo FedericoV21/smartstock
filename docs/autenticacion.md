@@ -429,6 +429,10 @@ El rol del usuario se almacena en `usuario.rol` (enum `rol_usuario`). Los permis
 | Configurar módulos | Si | No | No |
 | Anular comprobantes | Si | No | No |
 
+### Límite de usuarios (`/configuracion/usuarios`)
+
+Por negocio (tenant) puede haber como máximo **5 usuarios activos** a la vez. El límite está definido en `USUARIOS_MAX_POR_TENANT` (`src/lib/limits.ts`). La API `POST /api/configuracion/usuarios` cuenta filas en `usuario` con `activo = true` para el `tenant_id` actual y responde **403** si ya se alcanzó el tope. La pantalla muestra el uso como “X / 5 usuarios activos” y deshabilita la invitación al llegar al máximo. Desactivar un usuario (`activo = false`) libera un cupo para invitar a otro.
+
 ### Implementación del guard de rol
 
 ```typescript

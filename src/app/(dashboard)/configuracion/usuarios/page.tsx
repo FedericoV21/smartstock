@@ -19,6 +19,7 @@ import {
   TableHeader,
   TableRow,
 } from '@/components/ui/table';
+import { USUARIOS_MAX_POR_TENANT } from '@/lib/limits';
 
 type UsuarioRow = {
   id: string;
@@ -63,6 +64,9 @@ export default function UsuariosPage() {
   useEffect(() => {
     void load();
   }, [load]);
+
+  const usuariosActivos = usuarios.filter((u) => u.activo).length;
+  const limiteUsuarios = usuariosActivos >= USUARIOS_MAX_POR_TENANT;
 
   async function invitar() {
     setInviting(true);
@@ -115,7 +119,18 @@ export default function UsuariosPage() {
       ) : null}
 
       <section className="rounded-xl border bg-card p-4 shadow-sm md:p-6">
-        <h2 className="text-sm font-medium text-muted-foreground">Invitar usuario</h2>
+        <div className="flex flex-wrap items-baseline justify-between gap-2">
+          <h2 className="text-sm font-medium text-muted-foreground">Invitar usuario</h2>
+          <span className="text-xs text-muted-foreground">
+            {usuariosActivos} / {USUARIOS_MAX_POR_TENANT} usuarios activos
+          </span>
+        </div>
+        {limiteUsuarios ? (
+          <p className="mt-3 text-sm text-muted-foreground">
+            Llegaste al máximo de {USUARIOS_MAX_POR_TENANT} usuarios activos. Desactivá a alguien en
+            la tabla para liberar un cupo e invitar a otra persona.
+          </p>
+        ) : null}
         <div className="mt-4 grid gap-3 sm:grid-cols-2">
           <Input
             type="email"
@@ -123,10 +138,12 @@ export default function UsuariosPage() {
             value={email}
             onChange={(e) => setEmail(e.target.value)}
             autoComplete="off"
+            disabled={limiteUsuarios}
           />
           <Select
             value={rolInvite}
             onValueChange={(v) => setRolInvite(v as 'operador' | 'visor')}
+            disabled={limiteUsuarios}
           >
             <SelectTrigger>
               <SelectValue placeholder="Rol" />
@@ -140,17 +157,21 @@ export default function UsuariosPage() {
             placeholder="Nombre"
             value={nombre}
             onChange={(e) => setNombre(e.target.value)}
+            disabled={limiteUsuarios}
           />
           <Input
             placeholder="Apellido"
             value={apellido}
             onChange={(e) => setApellido(e.target.value)}
+            disabled={limiteUsuarios}
           />
         </div>
         <Button
           type="button"
           className="mt-4"
-          disabled={inviting || !email.trim() || !nombre.trim() || !apellido.trim()}
+          disabled={
+            limiteUsuarios || inviting || !email.trim() || !nombre.trim() || !apellido.trim()
+          }
           onClick={() => void invitar()}
         >
           {inviting ? 'Enviando…' : 'Enviar invitación'}

@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useState } from 'react';
 
 import { printTicket } from '@/components/pos/ticket-termico';
+import { determinarTipoFactura } from '@/lib/facturacion/tipo-comprobante';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { cn } from '@/lib/utils';
@@ -10,18 +11,58 @@ import { formatCurrency } from '@/lib/utils/formatters';
 
 import type { CartItem } from '@/app/(dashboard)/facturacion/pos/page';
 
+import { loadPosPrefs } from '@/lib/pos/prefs';
+
+const TZ_AR = 'America/Argentina/Buenos_Aires';
+
+function emisionTicketAhora(): { fechaEmision: string; horaEmision: string } {
+  const now = new Date();
+  return {
+    fechaEmision: now.toLocaleDateString('es-AR', {
+      timeZone: TZ_AR,
+      day: '2-digit',
+      month: '2-digit',
+      year: '2-digit',
+    }),
+    horaEmision: now.toLocaleTimeString('es-AR', {
+      timeZone: TZ_AR,
+      hour: '2-digit',
+      minute: '2-digit',
+      second: '2-digit',
+      hour12: false,
+    }),
+  };
+}
+
+function anchoTicketDesdePrefs(): '80mm' | '57mm' {
+  if (typeof window === 'undefined') return '80mm';
+  const p = loadPosPrefs().anchoTicket;
+  return p === '57mm' || p === '80mm' ? p : '80mm';
+}
+
+type CondicionIVA = Parameters<typeof determinarTipoFactura>[0];
+
 type MetodoPago = 'efectivo' | 'debito' | 'credito' | 'transferencia' | 'mixto';
 
 interface Props {
   items: CartItem[];
   clienteId: string;
   clienteNombre: string;
+  clienteCondicionIva: CondicionIVA;
   tipoComprobante: 'ticket' | 'factura';
   total: number;
   subtotal: number;
   descuentoMonto: number;
   ivaMonto: number;
+  tenantCondicionIva: CondicionIVA;
   tenantNombre: string;
+  tenantLogoUrl?: string | null;
+  tenantCuit?: string | null;
+  tenantDomicilio?: string | null;
+  tenantPuntoVenta?: number | null;
+  cajeroNombre?: string | null;
+  /** IVA por defecto del tenant cuando el producto no tiene alícuota (p. ej. 21). */
+  ivaPorcentajeDefault?: number;
   onSuccess: (result: { comprobanteId: string; numero: number; pdfUrl: string | null }) => void;
   onClose: () => void;
 }
@@ -40,12 +81,20 @@ export function CobroModal({
   items,
   clienteId,
   clienteNombre,
+  clienteCondicionIva,
   tipoComprobante,
   total,
   subtotal,
   descuentoMonto,
   ivaMonto,
+  tenantCondicionIva,
   tenantNombre,
+  tenantLogoUrl,
+  tenantCuit,
+  tenantDomicilio,
+  tenantPuntoVenta,
+  cajeroNombre,
+  ivaPorcentajeDefault = 21,
   onSuccess,
   onClose,
 }: Props) {
@@ -84,7 +133,9 @@ export function CobroModal({
     setStep('procesando');
     setErrorMsg('');
 
-    const tipo = tipoComprobante === 'ticket' ? 'ticket' : tipoComprobante;
+    const tipo = determinarTipoFactura(tenantCondicionIva, clienteCondicionIva, {
+      quiereTicket: tipoComprobante === 'ticket',
+    });
 
     const body: Record<string, unknown> = {
       tipo,
@@ -128,7 +179,16 @@ export function CobroModal({
       setErrorMsg('Error de conexión. El carrito se mantiene intacto.');
       setStep('error');
     }
-  }, [clienteId, items, metodo, mixtoDetalle, tipoComprobante, onSuccess]);
+  }, [
+    clienteCondicionIva,
+    clienteId,
+    items,
+    metodo,
+    mixtoDetalle,
+    onSuccess,
+    tenantCondicionIva,
+    tipoComprobante,
+  ]);
 
   // Escape to close
   useEffect(() => {
@@ -340,26 +400,42 @@ export function CobroModal({
                 <Button
                   variant="outline"
                   onClick={() => {
-                    printTicket({
-                      tenantNombre,
-                      tipoComprobante,
-                      numero: resultData.numero,
-                      fecha: new Date().toLocaleString('es-AR'),
-                      clienteNombre,
-                      items: items.map((it) => ({
-                        nombre: it.producto.nombre,
-                        cantidad: it.cantidad,
-                        precio_unitario: it.producto.precio_venta,
-                        subtotal: Math.round(it.cantidad * it.producto.precio_venta * 100) / 100,
-                        unidad: it.producto.unidad,
-                      })),
-                      subtotal,
-                      descuento: descuentoMonto,
-                      ivaMonto,
-                      total,
-                      metodoPago: metodo,
-                      vuelto: vuelto > 0 ? vuelto : undefined,
-                    });
+                    const { fechaEmision, horaEmision } = emisionTicketAhora();
+                    printTicket(
+                      {
+                        tenantNombre,
+                        logoUrl: tenantLogoUrl,
+                        tenantCuit: tenantCuit ?? undefined,
+                        tenantDomicilio: tenantDomicilio ?? undefined,
+                        tipoComprobante,
+                        numero: resultData.numero,
+                        fechaEmision,
+                        horaEmision,
+                        puntoVenta: tenantPuntoVenta ?? undefined,
+                        cajeroNombre: cajeroNombre ?? undefined,
+                        ivaPorcentajeDefault,
+                        clienteNombre,
+                        items: items.map((it) => ({
+                          nombre: it.producto.nombre,
+                          cantidad: it.cantidad,
+                          precio_unitario: it.producto.precio_venta,
+                          subtotal: Math.round(it.cantidad * it.producto.precio_venta * 100) / 100,
+                          unidad: it.producto.unidad,
+                          iva_porcentaje: it.producto.iva_porcentaje ?? null,
+                          codigo_identificacion:
+                            (it.producto.codigo_barras && it.producto.codigo_barras.trim()) ||
+                            it.producto.codigo ||
+                            null,
+                        })),
+                        subtotal,
+                        descuento: descuentoMonto,
+                        ivaMonto,
+                        total,
+                        metodoPago: metodo,
+                        vuelto: vuelto > 0 ? vuelto : undefined,
+                      },
+                      anchoTicketDesdePrefs(),
+                    );
                   }}
                 >
                   Imprimir ticket

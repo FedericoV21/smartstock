@@ -19,19 +19,30 @@ import {
   SelectTrigger,
   SelectValue,
 } from '@/components/ui/select';
+import { determinarTipoFactura } from '@/lib/facturacion/tipo-comprobante';
 import { clearCart, loadCart, saveCart } from '@/lib/pos/cart-persistence';
+import {
+  clampTipoComprobante,
+  loadPosPrefs,
+  normalizePosPrefs,
+  resolveTipoComprobanteInicial,
+  type PosPrefs,
+} from '@/lib/pos/prefs';
 import { cn } from '@/lib/utils';
 import { formatCurrency } from '@/lib/utils/formatters';
+
+type CondicionIVA = Parameters<typeof determinarTipoFactura>[0];
 
 type Cliente = {
   id: string;
   nombre: string;
-  condicion_iva: string;
+  condicion_iva: string | null;
 };
 
 type ProductoScanned = {
   id: string;
   codigo: string;
+  codigo_barras?: string | null;
   nombre: string;
   precio_venta: number;
   stock_actual: number;
@@ -53,6 +64,18 @@ export type CartItem = {
 };
 
 type DescuentoTipo = 'porcentaje' | 'monto';
+
+function normalizarCondicionIVA(value: string | null | undefined): CondicionIVA {
+  switch (value) {
+    case 'responsable_inscripto':
+    case 'monotributista':
+    case 'exento':
+    case 'consumidor_final':
+      return value;
+    default:
+      return 'consumidor_final';
+  }
+}
 
 function CantidadEditor({
   value,
@@ -139,7 +162,12 @@ function CantidadEditor({
 export default function PosPage() {
   const barcodeRef = useRef<BarcodeInputRef>(null);
   const [tenantId, setTenantId] = useState('');
+  const [tenantIva, setTenantIva] = useState<CondicionIVA>('consumidor_final');
   const [tenantName, setTenantName] = useState('');
+  const [tenantLogoUrl, setTenantLogoUrl] = useState<string | null>(null);
+  const [tenantCuit, setTenantCuit] = useState<string | null>(null);
+  const [tenantDomicilio, setTenantDomicilio] = useState<string | null>(null);
+  const [tenantPuntoVenta, setTenantPuntoVenta] = useState<number>(1);
   const [userName, setUserName] = useState('');
   const [canEmit, setCanEmit] = useState(true);
   const [ivaDefault, setIvaDefault] = useState(21);
@@ -147,7 +175,10 @@ export default function PosPage() {
   const [clienteId, setClienteId] = useState('');
   const [clienteSearch, setClienteSearch] = useState('');
   const [showClienteSearch, setShowClienteSearch] = useState(false);
-  const [tipoComprobante, setTipoComprobante] = useState<'ticket' | 'factura'>('ticket');
+  const [posPrefs, setPosPrefs] = useState<PosPrefs>(() => loadPosPrefs());
+  const [tipoComprobante, setTipoComprobante] = useState<'ticket' | 'factura'>(() =>
+    resolveTipoComprobanteInicial(loadPosPrefs()),
+  );
   const [lastScanned, setLastScanned] = useState<ProductoScanned | null>(null);
   const [scanError, setScanError] = useState('');
   const [stockWarning, setStockWarning] = useState('');
@@ -181,9 +212,10 @@ export default function PosPage() {
 
   useEffect(() => {
     async function init() {
-      const [profileRes, clientesRes] = await Promise.all([
+      const [profileRes, clientesRes, tenantRes] = await Promise.all([
         fetch('/api/perfil'),
         fetch('/api/clientes'),
+        fetch('/api/configuracion/tenant'),
       ]);
 
       if (profileRes.ok) {
@@ -219,6 +251,19 @@ export default function PosPage() {
         const list = c.clientes ?? c ?? [];
         setClientes(list);
       }
+
+      if (tenantRes.ok) {
+        const t = await tenantRes.json();
+        setTenantIva(normalizarCondicionIVA(t.condicion_iva));
+        setTenantLogoUrl(typeof t.logo_url === 'string' ? t.logo_url : null);
+        setTenantCuit(typeof t.cuit === 'string' ? t.cuit : null);
+        setTenantDomicilio(typeof t.domicilio === 'string' ? t.domicilio : null);
+        setTenantPuntoVenta(
+          typeof t.punto_de_venta === 'number' && Number.isFinite(t.punto_de_venta)
+            ? t.punto_de_venta
+            : 1,
+        );
+      }
     }
     void init();
   }, []);
@@ -227,6 +272,19 @@ export default function PosPage() {
     const id = setInterval(() => setNow(new Date()), 60_000);
     return () => clearInterval(id);
   }, []);
+
+  useEffect(() => {
+    function syncPosPrefs() {
+      setPosPrefs(loadPosPrefs());
+    }
+    window.addEventListener('focus', syncPosPrefs);
+    return () => window.removeEventListener('focus', syncPosPrefs);
+  }, []);
+
+  useEffect(() => {
+    const p = normalizePosPrefs(posPrefs);
+    setTipoComprobante((t) => clampTipoComprobante(t, p));
+  }, [posPrefs]);
 
   // Persist cart to localStorage (debounced)
   useEffect(() => {
@@ -246,6 +304,7 @@ export default function PosPage() {
 
   const clienteActual = clienteId ? clientes.find((c) => c.id === clienteId) : null;
   const clienteNombre = clienteActual?.nombre ?? 'Consumidor Final';
+  const clienteCondicionIva = normalizarCondicionIVA(clienteActual?.condicion_iva);
 
   const addUnitProduct = useCallback((producto: ProductoScanned) => {
     setItems((prev) => {
@@ -475,6 +534,9 @@ export default function PosPage() {
     showCobro ||
     showSearch;
 
+  const prefsPos = normalizePosPrefs(posPrefs);
+  const puedeAlternarComprobante = prefsPos.aceptaTicket && prefsPos.aceptaFactura;
+
   const { showHelp, setShowHelp } = usePosKeyboardShortcuts({
     onCobrar: () => {
       if (items.length > 0 && canEmit && !anyModalOpen) setShowCobro(true);
@@ -492,7 +554,7 @@ export default function PosPage() {
       if (items.length > 0 && !anyModalOpen) setShowCancelConfirm(true);
     },
     onCambiarTipo: () => {
-      if (!anyModalOpen) {
+      if (!anyModalOpen && puedeAlternarComprobante) {
         setTipoComprobante((t) => (t === 'ticket' ? 'factura' : 'ticket'));
       }
     },
@@ -586,18 +648,31 @@ export default function PosPage() {
             )}
           </div>
 
-          <Select
-            value={tipoComprobante}
-            onValueChange={(v) => setTipoComprobante(v as 'ticket' | 'factura')}
-          >
-            <SelectTrigger className="w-28">
-              <SelectValue />
-            </SelectTrigger>
-            <SelectContent>
-              <SelectItem value="ticket">Ticket</SelectItem>
-              <SelectItem value="factura">Factura</SelectItem>
-            </SelectContent>
-          </Select>
+          {puedeAlternarComprobante ? (
+            <Select
+              value={tipoComprobante}
+              onValueChange={(v) => setTipoComprobante(v as 'ticket' | 'factura')}
+            >
+              <SelectTrigger className="w-[8.5rem]" title="Tipo de comprobante (F12)">
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                {prefsPos.aceptaTicket ? (
+                  <SelectItem value="ticket">Ticket</SelectItem>
+                ) : null}
+                {prefsPos.aceptaFactura ? (
+                  <SelectItem value="factura">Factura</SelectItem>
+                ) : null}
+              </SelectContent>
+            </Select>
+          ) : (
+            <span
+              className="inline-flex h-9 min-w-[8.5rem] items-center rounded-md border bg-muted/30 px-3 text-sm font-medium"
+              title="Configurá los tipos permitidos en Configuración → Preferencias POS"
+            >
+              {tipoComprobante === 'ticket' ? 'Ticket' : 'Factura'}
+            </span>
+          )}
 
           <span className="hidden text-sm text-muted-foreground md:inline">
             {now.toLocaleDateString('es-AR')}{' '}
@@ -936,12 +1011,20 @@ export default function PosPage() {
           items={items}
           clienteId={clienteId}
           clienteNombre={clienteNombre}
+          clienteCondicionIva={clienteCondicionIva}
           tipoComprobante={tipoComprobante}
           total={total}
           subtotal={subtotalRounded}
           descuentoMonto={descuentoMonto}
           ivaMonto={ivaMonto}
+          tenantCondicionIva={tenantIva}
           tenantNombre={tenantName}
+          tenantLogoUrl={tenantLogoUrl}
+          tenantCuit={tenantCuit}
+          tenantDomicilio={tenantDomicilio}
+          tenantPuntoVenta={tenantPuntoVenta}
+          cajeroNombre={userName}
+          ivaPorcentajeDefault={ivaDefault}
           onSuccess={() => {}}
           onClose={() => {
             setShowCobro(false);
@@ -975,7 +1058,12 @@ export default function PosPage() {
                   setItems(pendingRestore.items as CartItem[]);
                   if (pendingRestore.clienteId) setClienteId(pendingRestore.clienteId);
                   if (pendingRestore.tipoComprobante) {
-                    setTipoComprobante(pendingRestore.tipoComprobante as 'ticket' | 'factura');
+                    setTipoComprobante(
+                      clampTipoComprobante(
+                        pendingRestore.tipoComprobante as 'ticket' | 'factura',
+                        loadPosPrefs(),
+                      ),
+                    );
                   }
                   setShowRestorePrompt(false);
                   setPendingRestore(null);
@@ -1000,6 +1088,7 @@ export default function PosPage() {
           addProduct({
             id: p.id,
             codigo: p.codigo,
+            codigo_barras: p.codigo_barras ?? null,
             nombre: p.nombre,
             precio_venta: p.precio_venta,
             stock_actual: p.stock_actual,

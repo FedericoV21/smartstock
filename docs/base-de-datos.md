@@ -357,6 +357,8 @@ erDiagram
 | `rol` | `admin`, `operador` o `visor`. Controla permisos |
 | `activo` | Soft delete. Usuario desactivado no puede operar |
 
+**Regla de negocio (aplicación):** como máximo **5 usuarios activos** por `tenant_id` en la pantalla Configuración → Usuarios. No está modelada como constraint SQL; la validación ocurre en `POST /api/configuracion/usuarios` (ver `src/lib/limits.ts`).
+
 **Índices:** `idx_usuario_tenant`, `idx_usuario_email`.
 
 ---

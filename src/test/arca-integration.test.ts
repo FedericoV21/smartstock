@@ -16,6 +16,7 @@ import { verificarVencimientoCertificado } from '@/lib/facturacion/arca/cert-che
 import { encriptarCampo, desencriptarCampo } from '@/lib/facturacion/arca/crypto';
 import { getEndpoints } from '@/lib/facturacion/arca/endpoints';
 import { mapTipoComprobante, mapTipoDocReceptor, CONCEPTO } from '@/lib/facturacion/arca/tipos';
+import { obtenerTicketAcceso } from '@/lib/facturacion/arca/wsaa';
 import { buildFECAESolicitar, buildFECompUltimoAutorizado, buildLoginCmsRequest } from '@/lib/facturacion/arca/xml-builder';
 
 const HAS_ARCA_CREDS = !!(
@@ -46,7 +47,7 @@ describe('ARCA - Unit tests (crypto, tipos, xml)', () => {
   it('getEndpoints retorna URLs correctas para producción', () => {
     const ep = getEndpoints('produccion');
     expect(ep.wsaa).toBe('https://wsaa.afip.gob.ar/ws/services/LoginCms');
-    expect(ep.wsfe).toBe('https://servicios1.afip.gob.ar/wsfev1/service.asmx');
+    expect(ep.wsfe).toBe('https://servicios1.afip.gov.ar/wsfev1/service.asmx');
   });
 
   it('mapTipoComprobante mapea correctamente', () => {
@@ -102,6 +103,31 @@ describe('ARCA - Unit tests (crypto, tipos, xml)', () => {
     expect(xml).toContain('<ar:ImpTotal>121.00</ar:ImpTotal>');
     expect(xml).toContain('<ar:ImpNeto>100.00</ar:ImpNeto>');
     expect(xml).toContain('<ar:ImpIVA>21.00</ar:ImpIVA>');
+    expect(xml).toContain('<ar:Iva>');
+  });
+
+  it('buildFECAESolicitar omite objeto IVA para Factura C', () => {
+    const xml = buildFECAESolicitar({
+      token: 'tok',
+      sign: 'sig',
+      cuit: '20123456789',
+      puntoDeVenta: 3,
+      tipoComprobante: 11,
+      concepto: CONCEPTO.PRODUCTOS,
+      numeroDesde: 2,
+      numeroHasta: 2,
+      fechaComprobante: '20260419',
+      tipoDocReceptor: 99,
+      nroDocReceptor: '0',
+      importeTotal: 950,
+      importeNeto: 950,
+      importeIVA: 0,
+      importeExento: 0,
+      alicuotaIVA: 0,
+    });
+
+    expect(xml).toContain('<ar:ImpIVA>0.00</ar:ImpIVA>');
+    expect(xml).not.toContain('<ar:Iva>');
   });
 
   it('buildFECompUltimoAutorizado genera XML correcto', () => {
@@ -113,8 +139,6 @@ describe('ARCA - Unit tests (crypto, tipos, xml)', () => {
 });
 
 describe.skipIf(!HAS_ARCA_CREDS)('ARCA - Integración contra homologación', () => {
-  const { obtenerTicketAcceso } = require('@/lib/facturacion/arca/wsaa');
-
   const certPem = process.env.ARCA_TEST_CERT_PEM!;
   const keyPem = process.env.ARCA_TEST_KEY_PEM!;
   const cuit = process.env.ARCA_TEST_CUIT!;

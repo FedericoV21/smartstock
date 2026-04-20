@@ -2,6 +2,7 @@ import { NextResponse, type NextRequest } from 'next/server';
 
 import { getTenantSession, rejectIfVisor } from '@/lib/api/tenant-session';
 import { moduloGuard } from '@/lib/modulos/guard';
+import { hoyEnAR } from '@/lib/utils/formatters';
 import type { Database } from '@/types/database';
 
 type EstadoPedido = Database['public']['Enums']['estado_pedido'];
@@ -111,7 +112,7 @@ export async function POST(request: Request) {
       tenant_id: session.tenantId,
       cliente_id,
       estado: 'borrador',
-      fecha: new Date().toISOString().split('T')[0],
+      fecha: hoyEnAR(),
       total: Math.round(total * 100) / 100,
       notas: typeof b.notas === 'string' && b.notas.trim() ? b.notas.trim() : null,
       usuario_id: session.userId,

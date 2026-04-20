@@ -115,8 +115,8 @@ export async function solicitarCAE(
     responseXml,
     comprobanteId,
     exitoso: resultado.aprobado,
-    errorCodigo: resultado.errores[0]?.codigo,
-    errorMensaje: resultado.errores[0]?.mensaje,
+    errorCodigo: resultado.errores[0]?.codigo ?? resultado.observaciones[0]?.codigo,
+    errorMensaje: resultado.errores[0]?.mensaje ?? resultado.observaciones[0]?.mensaje,
   });
 
   return resultado;

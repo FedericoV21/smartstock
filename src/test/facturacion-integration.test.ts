@@ -168,6 +168,25 @@ describe.skipIf(!integrationConfigured)('Integración — facturación (Supabase
     expect(despues).toBe(antes - 7);
   });
 
+  it('normaliza tipo "factura" a Factura C para monotributista', async () => {
+    const sb = userClient(token);
+
+    const r = await emitirComprobante(
+      sb,
+      { tenantId, userId },
+      {
+        tipo: 'factura',
+        cliente_id: clienteId,
+        items: [{ producto_id: productoId, cantidad: 1, precio_unitario: 20 }],
+      },
+      { generarPdfYSubir: false },
+    );
+
+    expect(r.ok).toBe(true);
+    if (!r.ok) return;
+    expect(r.data.comprobante.tipo).toBe('factura_c');
+  });
+
   it('emitir Nota de Crédito C devuelve stock', async () => {
     const sb = userClient(token);
     const antes = (await sb.from('producto').select('stock_actual').eq('id', productoId).single())

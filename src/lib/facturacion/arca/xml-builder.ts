@@ -34,6 +34,7 @@ export interface FECAEParams {
 
 export function buildFECAESolicitar(params: FECAEParams): string {
   const tieneServicio = params.concepto !== 1;
+  const informarObjetoIva = !esComprobanteTipoC(params.tipoComprobante);
 
   return `<?xml version="1.0" encoding="UTF-8"?>
 <soapenv:Envelope xmlns:soapenv="http://schemas.xmlsoap.org/soap/envelope/"
@@ -70,13 +71,13 @@ export function buildFECAESolicitar(params: FECAEParams): string {
             <ar:FchVtoPago>${params.fechaVtoPago}</ar:FchVtoPago>` : ''}
             <ar:MonId>PES</ar:MonId>
             <ar:MonCotiz>1</ar:MonCotiz>
-            <ar:Iva>
+            ${informarObjetoIva ? `<ar:Iva>
               <ar:AlicIva>
                 <ar:Id>${mapAlicuotaIVAId(params.alicuotaIVA)}</ar:Id>
                 <ar:BaseImp>${params.importeNeto.toFixed(2)}</ar:BaseImp>
                 <ar:Importe>${params.importeIVA.toFixed(2)}</ar:Importe>
               </ar:AlicIva>
-            </ar:Iva>
+            </ar:Iva>` : ''}
           </ar:FECAEDetRequest>
         </ar:FeDetReq>
       </ar:FeCAEReq>
@@ -119,4 +120,8 @@ function mapAlicuotaIVAId(porcentaje: number): number {
     2.5: 9,
   };
   return mapa[porcentaje] ?? 5;
+}
+
+function esComprobanteTipoC(tipoComprobante: number): boolean {
+  return tipoComprobante === 11 || tipoComprobante === 13;
 }

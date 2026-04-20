@@ -526,6 +526,8 @@ export async function POST(request: Request) {
 | `analizador_rentabilidad` | `/analizador`, `/analizador/listas`, `/analizador/proveedores`, `/analizador/reposicion`, `/analizador/ranking`, `/analizador/cuenta-corriente` | `/api/analizador/*` |
 | — (siempre visible) | `/`, `/configuracion`, `/configuracion/plan`, `/configuracion/usuarios` | `/api/configuracion/plan` |
 
+En `/configuracion/usuarios`, el tenant tiene un tope de **5 usuarios activos** (invitaciones nuevas bloqueadas si ya hay 5 con `activo = true`; detalle en `docs/autenticacion.md`).
+
 ---
 
 ## Tipos TypeScript

@@ -1,6 +1,7 @@
 import { NextResponse } from 'next/server';
 
 import { getTenantSession, rejectIfVisor } from '@/lib/api/tenant-session';
+import { USUARIOS_MAX_POR_TENANT } from '@/lib/limits';
 import { createServiceRoleClient } from '@/lib/supabase/server';
 import type { Database } from '@/types/database';
 
@@ -92,6 +93,22 @@ export async function POST(request: Request) {
     return NextResponse.json(
       { error: 'Ya existe un usuario con ese correo en tu negocio' },
       { status: 409 },
+    );
+  }
+
+  const { count: nActivos, error: countErr } = await session.supabase
+    .from('usuario')
+    .select('*', { count: 'exact', head: true })
+    .eq('tenant_id', session.tenantId)
+    .eq('activo', true);
+
+  if (countErr) {
+    return NextResponse.json({ error: countErr.message }, { status: 500 });
+  }
+  if ((nActivos ?? 0) >= USUARIOS_MAX_POR_TENANT) {
+    return NextResponse.json(
+      { error: `Tu negocio puede tener como máximo ${USUARIOS_MAX_POR_TENANT} usuarios` },
+      { status: 403 },
     );
   }
 

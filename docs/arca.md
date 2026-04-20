@@ -24,7 +24,7 @@ El flujo siempre es: **WSAA primero** (autenticarse) → **WSFE después** (oper
 | Servicio | Homologación (testing) | Producción |
 |---|---|---|
 | WSAA | `https://wsaahomo.afip.gob.ar/ws/services/LoginCms` | `https://wsaa.afip.gob.ar/ws/services/LoginCms` |
-| WSFE | `https://wswhomo.afip.gob.ar/wsfev1/service.asmx` | `https://servicios1.afip.gob.ar/wsfev1/service.asmx` |
+| WSFE | `https://wswhomo.afip.gov.ar/wsfev1/service.asmx` | `https://servicios1.afip.gov.ar/wsfev1/service.asmx` |
 
 La selección del ambiente se lee de `arca_config.ambiente` (`'homologacion'` o `'produccion'`).
 
@@ -35,12 +35,12 @@ export function getEndpoints(ambiente: 'homologacion' | 'produccion') {
   if (ambiente === 'produccion') {
     return {
       wsaa: 'https://wsaa.afip.gob.ar/ws/services/LoginCms',
-      wsfe: 'https://servicios1.afip.gob.ar/wsfev1/service.asmx',
+      wsfe: 'https://servicios1.afip.gov.ar/wsfev1/service.asmx',
     };
   }
   return {
     wsaa: 'https://wsaahomo.afip.gob.ar/ws/services/LoginCms',
-    wsfe: 'https://wswhomo.afip.gob.ar/wsfev1/service.asmx',
+    wsfe: 'https://wswhomo.afip.gov.ar/wsfev1/service.asmx',
   };
 }
 ```

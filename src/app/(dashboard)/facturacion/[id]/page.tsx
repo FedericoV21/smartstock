@@ -14,6 +14,7 @@ import {
   TableHeader,
   TableRow,
 } from '@/components/ui/table';
+import { formatearNumeroComprobante } from '@/lib/facturacion/formato';
 import { cn } from '@/lib/utils';
 import { formatCurrency, formatDate } from '@/lib/utils/formatters';
 
@@ -46,6 +47,7 @@ type ComprobanteDetalle = {
   iva_porcentaje: number;
   total: number;
   estado: string;
+  punto_de_venta: number | null;
   pdf_url: string | null;
   cae: string | null;
   cae_vencimiento: string | null;
@@ -75,10 +77,11 @@ export default function ComprobanteDetallePage() {
     null,
   );
   const [loading, setLoading] = useState(true);
+  const [pdfRetrying, setPdfRetrying] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
-  const load = useCallback(async () => {
-    setLoading(true);
+  const load = useCallback(async (opts?: { quiet?: boolean }) => {
+    if (!opts?.quiet) setLoading(true);
     const res = await fetch(`/api/facturacion/${id}`);
     const json = await res.json();
     if (!res.ok) {
@@ -87,7 +90,7 @@ export default function ComprobanteDetallePage() {
       setError(null);
       setComprobante(json);
     }
-    setLoading(false);
+    if (!opts?.quiet) setLoading(false);
   }, [id]);
 
   useEffect(() => {
@@ -117,7 +120,7 @@ export default function ComprobanteDetallePage() {
   }
 
   const c = comprobante;
-  const numeroFormateado = `0001-${String(c.numero).padStart(8, '0')}`;
+  const numeroFormateado = formatearNumeroComprobante(c.punto_de_venta ?? 1, c.numero);
 
   return (
     <div className="mx-auto max-w-3xl space-y-6">
@@ -148,7 +151,7 @@ export default function ComprobanteDetallePage() {
             </p>
           ) : null}
         </div>
-        <div className="flex gap-2">
+        <div className="flex flex-wrap items-center gap-2">
           {c.pdf_url ? (
             <>
               <a
@@ -172,6 +175,25 @@ export default function ComprobanteDetallePage() {
                 <Printer className="h-4 w-4" /> Imprimir
               </Button>
             </>
+          ) : c.estado === 'emitido' ? (
+            <Button
+              type="button"
+              variant="outline"
+              size="sm"
+              className="gap-1"
+              disabled={pdfRetrying}
+              onClick={async () => {
+                setPdfRetrying(true);
+                try {
+                  await load({ quiet: true });
+                } finally {
+                  setPdfRetrying(false);
+                }
+              }}
+            >
+              <Download className="h-4 w-4" />
+              {pdfRetrying ? 'Generando PDF…' : 'Obtener PDF'}
+            </Button>
           ) : null}
         </div>
       </div>

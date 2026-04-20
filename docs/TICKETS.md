@@ -1331,8 +1331,9 @@ ultima_actualizacion: 2026-04-16
 - [x] Admin puede cambiar el rol de un usuario
 - [x] Admin puede desactivar un usuario (activo = false)
 - [x] Solo admin accede a esta página
+- [x] Máximo 5 usuarios **activos** por tenant; al llegar al tope no se pueden enviar más invitaciones hasta desactivar a alguien
 
-**Notas técnicas:** Invitación vía `auth.admin.inviteUserByEmail` + insert en `usuario` (service role); alternativa documentada: `createUser`.
+**Notas técnicas:** Invitación vía `auth.admin.inviteUserByEmail` + insert en `usuario` (service role); alternativa documentada: `createUser`. Límite de cupos: `USUARIOS_MAX_POR_TENANT` en `src/lib/limits.ts`, validado en `POST /api/configuracion/usuarios` antes de invitar (conteo `usuario` con `activo = true` por `tenant_id`).
 
 ---
 

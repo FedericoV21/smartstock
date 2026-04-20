@@ -10,13 +10,24 @@ export async function GET() {
   const { data, error } = await session.supabase
     .from('tenant')
     .select(
-      'id, nombre, razon_social, cuit, domicilio, telefono, email, condicion_iva, punto_de_venta, plan, logo_url',
+      'id, nombre, razon_social, cuit, domicilio, telefono, email, horarios_atencion, condicion_iva, punto_de_venta, plan, logo_url',
     )
     .eq('id', session.tenantId)
     .single();
 
   if (error || !data) {
-    return NextResponse.json({ error: 'Tenant no encontrado' }, { status: 500 });
+    if (error) {
+      console.error('[GET /api/configuracion/tenant]', error.message, error.code);
+    }
+    return NextResponse.json(
+      {
+        error: 'Tenant no encontrado',
+        ...(process.env.NODE_ENV === 'development' && error
+          ? { debug: { message: error.message, code: error.code, hint: error.hint } }
+          : {}),
+      },
+      { status: 500 },
+    );
   }
 
   return NextResponse.json(data);
@@ -57,6 +68,7 @@ export async function PATCH(request: Request) {
   if (b.cuit !== undefined) updates.cuit = str(b.cuit);
   if (b.domicilio !== undefined) updates.domicilio = str(b.domicilio);
   if (b.telefono !== undefined) updates.telefono = str(b.telefono);
+  if (b.horarios_atencion !== undefined) updates.horarios_atencion = str(b.horarios_atencion);
   if (b.email !== undefined) updates.email = str(b.email);
   if (b.condicion_iva !== undefined) updates.condicion_iva = b.condicion_iva;
   if (b.punto_de_venta !== undefined)

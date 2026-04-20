@@ -10,6 +10,7 @@ import { formatCurrency } from '@/lib/utils/formatters';
 export type ProductSearchResult = {
   id: string;
   codigo: string;
+  codigo_barras?: string | null;
   nombre: string;
   precio_venta: number;
   stock_actual: number;

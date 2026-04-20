@@ -119,6 +119,7 @@ smartstock/
 │   │       ├── ia/                   # Extracción con Gemini
 │   │       └── analizador/           # Matching, simulación y aplicación de listas
 │   ├── lib/                          # Lógica de negocio y utilidades
+│   │   ├── limits.ts                 # Constantes de límites (ej. usuarios activos por tenant)
 │   │   ├── supabase/                 # Clientes Supabase (browser, server, middleware)
 │   │   ├── normalizador/             # Aliases, mapeo, validación, normalización
 │   │   ├── facturacion/              # PDF generator, numerador, ARCA (wsaa, wsfe)

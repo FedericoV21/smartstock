@@ -2,6 +2,7 @@ import { NextResponse } from 'next/server';
 
 import { getTenantSession, rejectIfVisor } from '@/lib/api/tenant-session';
 import { moduloGuard } from '@/lib/modulos/guard';
+import { hoyEnAR } from '@/lib/utils/formatters';
 
 export async function POST(
   _request: Request,
@@ -50,7 +51,7 @@ export async function POST(
       tenant_id: session.tenantId,
       cliente_id: presupuesto.cliente_id,
       estado: 'borrador',
-      fecha: new Date().toISOString().split('T')[0],
+      fecha: hoyEnAR(),
       total: presupuesto.total,
       notas: `Generado desde presupuesto #${presupuesto.numero}`,
       usuario_id: session.userId,
