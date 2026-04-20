@@ -1,4 +1,4 @@
-import { DashboardChrome } from '@/components/dashboard/dashboard-chrome';
+import { DashboardShell } from '@/components/dashboard/dashboard-shell';
 import { getSessionProfile } from '@/lib/dashboard/session-profile';
 
 export default async function DashboardLayout({
@@ -11,12 +11,16 @@ export default async function DashboardLayout({
   const canEdit = profile ? profile.rol !== 'visor' : false;
 
   return (
-    <DashboardChrome
+    <DashboardShell
       userDisplayName={userDisplayName}
       canEdit={canEdit}
       isAdmin={profile?.rol === 'admin'}
+      isSuperAdmin={profile?.isSuperAdmin ?? false}
+      homeTenantId={profile?.homeTenantId ?? ''}
+      effectiveTenantId={profile?.tenantId ?? ''}
+      homeTenantName={profile?.homeTenantName ?? ''}
     >
       {children}
-    </DashboardChrome>
+    </DashboardShell>
   );
 }

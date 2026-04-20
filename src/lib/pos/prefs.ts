@@ -72,3 +72,23 @@ export function clampTipoComprobante(t: 'ticket' | 'factura', prefs: PosPrefs): 
   if (p.aceptaTicket) return 'ticket';
   return 'factura';
 }
+
+/**
+ * Sin ARCA listo (módulo + certificados y datos en `arca_config`), el POS no puede facturar.
+ * Ajusta preferencias guardadas para no ofrecer factura en ese caso.
+ */
+export function clampPosPrefsForArca(
+  prefs: Partial<PosPrefs> | PosPrefs,
+  arcaConfigurado: boolean,
+): PosPrefs {
+  if (arcaConfigurado) return normalizePosPrefs(prefs);
+  const p = normalizePosPrefs(prefs);
+  if (!p.aceptaFactura) return p;
+  const next: PosPrefs = {
+    ...p,
+    aceptaFactura: false,
+    comprobantePredeterminado:
+      p.comprobantePredeterminado === 'factura' && p.aceptaTicket ? 'ticket' : p.comprobantePredeterminado,
+  };
+  return normalizePosPrefs(next);
+}

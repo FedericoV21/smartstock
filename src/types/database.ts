@@ -1411,15 +1411,82 @@ export type Database = {
         };
         Relationships: [];
       };
+      super_admin_contexto_log: {
+        Row: {
+          created_at: string;
+          id: string;
+          tenant_id_next: string | null;
+          tenant_id_prev: string | null;
+          usuario_id: string;
+        };
+        Insert: {
+          created_at?: string;
+          id?: string;
+          tenant_id_next?: string | null;
+          tenant_id_prev?: string | null;
+          usuario_id: string;
+        };
+        Update: {
+          created_at?: string;
+          id?: string;
+          tenant_id_next?: string | null;
+          tenant_id_prev?: string | null;
+          usuario_id?: string;
+        };
+        Relationships: [
+          {
+            foreignKeyName: 'super_admin_contexto_log_usuario_id_fkey';
+            columns: ['usuario_id'];
+            isOneToOne: false;
+            referencedRelation: 'usuario';
+            referencedColumns: ['id'];
+          },
+        ];
+      };
+      super_admin_tenant_acceso: {
+        Row: {
+          created_at: string;
+          tenant_id: string;
+          usuario_id: string;
+        };
+        Insert: {
+          created_at?: string;
+          tenant_id: string;
+          usuario_id: string;
+        };
+        Update: {
+          created_at?: string;
+          tenant_id?: string;
+          usuario_id?: string;
+        };
+        Relationships: [
+          {
+            foreignKeyName: 'super_admin_tenant_acceso_tenant_id_fkey';
+            columns: ['tenant_id'];
+            isOneToOne: false;
+            referencedRelation: 'tenant';
+            referencedColumns: ['id'];
+          },
+          {
+            foreignKeyName: 'super_admin_tenant_acceso_usuario_id_fkey';
+            columns: ['usuario_id'];
+            isOneToOne: false;
+            referencedRelation: 'usuario';
+            referencedColumns: ['id'];
+          },
+        ];
+      };
       usuario: {
         Row: {
           activo: boolean;
           apellido: string;
           created_at: string;
           email: string;
+          es_super_admin: boolean;
           id: string;
           nombre: string;
           rol: Database['public']['Enums']['rol_usuario'];
+          tenant_contexto_id: string | null;
           tenant_id: string;
         };
         Insert: {
@@ -1427,9 +1494,11 @@ export type Database = {
           apellido: string;
           created_at?: string;
           email: string;
+          es_super_admin?: boolean;
           id: string;
           nombre: string;
           rol?: Database['public']['Enums']['rol_usuario'];
+          tenant_contexto_id?: string | null;
           tenant_id: string;
         };
         Update: {
@@ -1437,12 +1506,21 @@ export type Database = {
           apellido?: string;
           created_at?: string;
           email?: string;
+          es_super_admin?: boolean;
           id?: string;
           nombre?: string;
           rol?: Database['public']['Enums']['rol_usuario'];
+          tenant_contexto_id?: string | null;
           tenant_id?: string;
         };
         Relationships: [
+          {
+            foreignKeyName: 'usuario_tenant_contexto_id_fkey';
+            columns: ['tenant_contexto_id'];
+            isOneToOne: false;
+            referencedRelation: 'tenant';
+            referencedColumns: ['id'];
+          },
           {
             foreignKeyName: 'usuario_tenant_id_fkey';
             columns: ['tenant_id'];
@@ -1455,6 +1533,10 @@ export type Database = {
     };
     Views: Record<string, never>;
     Functions: {
+      super_admin_set_tenant_contexto: {
+        Args: { p_tenant_id: string | null };
+        Returns: undefined;
+      };
       activar_plan: {
         Args: { p_plan: Database['public']['Enums']['plan_tipo']; p_tenant_id: string };
         Returns: undefined;

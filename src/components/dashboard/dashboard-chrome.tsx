@@ -1,5 +1,6 @@
 'use client';
 
+import Image from 'next/image';
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
 import { useEffect, useMemo, useState } from 'react';
@@ -247,15 +248,45 @@ function SidebarNav({
   );
 }
 
+function SiteLogoLink({ onClick }: { onClick?: () => void }) {
+  return (
+    <Link
+      href="/"
+      className="flex w-full shrink-0 items-center justify-center"
+      onClick={onClick}
+    >
+      <Image
+        src="/nexus/nexus_logo.png"
+        alt="Nexus Solutions Software"
+        width={360}
+        height={126}
+        className="h-20 w-auto max-w-[min(280px,calc(100%-2rem))] object-contain object-center md:h-[5.5rem]"
+        priority
+      />
+    </Link>
+  );
+}
+
 export function DashboardChrome({
   userDisplayName,
   canEdit,
   isAdmin = false,
+  isSuperAdmin = false,
+  homeTenantId = '',
+  effectiveTenantId = '',
+  homeTenantName = '',
+  setupMode = false,
   children,
 }: {
   userDisplayName: string;
   canEdit: boolean;
   isAdmin?: boolean;
+  isSuperAdmin?: boolean;
+  homeTenantId?: string;
+  effectiveTenantId?: string;
+  homeTenantName?: string;
+  /** Pantalla inicial de negocio: sin menú lateral hasta completar datos. */
+  setupMode?: boolean;
   children: React.ReactNode;
 }) {
   const pathname = usePathname() ?? '/';
@@ -296,11 +327,10 @@ export function DashboardChrome({
 
   return (
     <div className="flex min-h-screen overflow-x-hidden bg-muted/30">
+      {!setupMode ? (
       <aside className="hidden w-60 shrink-0 border-r bg-card md:flex md:flex-col">
-        <div className="flex h-14 items-center border-b px-6">
-          <Link href="/" className="text-lg font-semibold tracking-tight">
-            SmartStock
-          </Link>
+        <div className="flex h-24 items-center justify-center border-b px-4">
+          <SiteLogoLink />
         </div>
         {loading ? (
           <div className="flex-1 animate-pulse p-4" aria-hidden />
@@ -314,8 +344,9 @@ export function DashboardChrome({
           />
         )}
       </aside>
+      ) : null}
 
-      {mobileOpen ? (
+      {!setupMode && mobileOpen ? (
         <button
           type="button"
           aria-label="Cerrar menú"
@@ -324,23 +355,18 @@ export function DashboardChrome({
         />
       ) : null}
 
+      {!setupMode ? (
       <aside
         className={cn(
           'fixed inset-y-0 left-0 z-50 flex w-[min(18rem,85vw)] flex-col border-r bg-card shadow-lg transition-transform duration-200 md:hidden',
           mobileOpen ? 'translate-x-0' : '-translate-x-full'
         )}
       >
-        <div className="flex h-14 items-center justify-between border-b px-4">
-          <Link
-            href="/"
-            className="text-lg font-semibold tracking-tight"
-            onClick={() => setMobileOpen(false)}
-          >
-            SmartStock
-          </Link>
+        <div className="relative flex h-24 items-center justify-center border-b px-4">
+          <SiteLogoLink onClick={() => setMobileOpen(false)} />
           <button
             type="button"
-            className="rounded-md p-2 text-muted-foreground hover:bg-muted hover:text-foreground"
+            className="absolute right-2 top-1/2 -translate-y-1/2 rounded-md p-2 text-muted-foreground hover:bg-muted hover:text-foreground"
             aria-label="Cerrar menú"
             onClick={() => setMobileOpen(false)}
           >
@@ -360,13 +386,24 @@ export function DashboardChrome({
           />
         )}
       </aside>
+      ) : null}
 
       <div className="flex min-h-screen min-w-0 flex-1 flex-col">
         <DashboardHeader
           userDisplayName={userDisplayName}
           onMenuClick={() => setMobileOpen(true)}
+          hideMobileMenu={setupMode}
+          isSuperAdmin={isSuperAdmin}
+          homeTenantId={homeTenantId}
+          effectiveTenantId={effectiveTenantId}
+          homeTenantName={homeTenantName}
         />
-        <main className="flex-1 overflow-x-hidden p-4 md:p-6">
+        <main
+          className={cn(
+            'flex-1 overflow-x-hidden p-4 md:p-6',
+            setupMode && 'flex flex-col items-center'
+          )}
+        >
           <DashboardRoleProvider canEdit={canEdit} isAdmin={isAdmin}>
             {children}
           </DashboardRoleProvider>

@@ -1,4 +1,4 @@
-import { NextResponse } from 'next/server';
+﻿import { NextResponse } from 'next/server';
 
 import { getSessionProfile } from '@/lib/dashboard/session-profile';
 
@@ -12,6 +12,9 @@ export async function GET() {
   return NextResponse.json({
     userDisplayName: profile.userDisplayName,
     tenantId: profile.tenantId,
+    homeTenantId: profile.homeTenantId,
+    homeTenantName: profile.homeTenantName,
+    isSuperAdmin: profile.isSuperAdmin,
     tenantName: profile.tenantName,
     rol: profile.rol,
     ivaDefault: profile.ivaDefault,

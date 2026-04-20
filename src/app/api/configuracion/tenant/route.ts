@@ -30,7 +30,31 @@ export async function GET() {
     );
   }
 
-  return NextResponse.json(data);
+  let arca_configurado = false;
+  const { data: moduloRow } = await session.supabase
+    .from('modulo_config')
+    .select('facturador_arca')
+    .eq('tenant_id', session.tenantId)
+    .maybeSingle();
+
+  const arcaModuloActivo = !!(moduloRow && (moduloRow as { facturador_arca?: boolean }).facturador_arca);
+
+  if (arcaModuloActivo) {
+    const { data: arcaRow } = await session.supabase
+      .from('arca_config')
+      .select('certificado_pem, clave_privada_pem, cuit_emisor, punto_de_venta')
+      .eq('tenant_id', session.tenantId)
+      .maybeSingle();
+
+    arca_configurado = !!(
+      arcaRow?.certificado_pem &&
+      arcaRow?.clave_privada_pem &&
+      arcaRow?.cuit_emisor &&
+      arcaRow?.punto_de_venta != null
+    );
+  }
+
+  return NextResponse.json({ ...data, arca_configurado });
 }
 
 export async function PATCH(request: Request) {

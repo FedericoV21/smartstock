@@ -27,7 +27,7 @@ export default async function DashboardPage() {
       <OnboardingWizard />
       <div>
         <h1 className="text-2xl font-semibold tracking-tight md:text-3xl">
-          Bienvenido a SmartStock
+          Bienvenido
         </h1>
         <p className="mt-2 text-muted-foreground">
           Estás trabajando en <span className="font-medium text-foreground">{tenantName}</span>.

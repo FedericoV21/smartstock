@@ -32,12 +32,14 @@ export function OnboardingWizard() {
 
     const totalProductos = typeof prodJson.total === 'number' ? prodJson.total : 0;
     const fiscalOk = Boolean(
-      String(tenantJson.razon_social ?? '').trim() &&
+      String(tenantJson.nombre ?? '').trim() &&
+        String(tenantJson.razon_social ?? '').trim() &&
         String(tenantJson.cuit ?? '').trim() &&
         String(tenantJson.condicion_iva ?? '').trim()
     );
 
-    const conviene = totalProductos === 0 || !fiscalOk;
+    // Los datos fiscales mínimos ya se completan en /onboarding (admin). Este asistente sugiere categorías y productos.
+    const conviene = totalProductos === 0 && fiscalOk;
     setOpen(conviene);
     setLoading(false);
   }, []);

@@ -1,5 +1,6 @@
 'use client';
 
+import Link from 'next/link';
 import { useCallback, useEffect, useRef, useState } from 'react';
 
 import { useDashboardRole } from '@/components/dashboard/dashboard-role-context';
@@ -14,6 +15,7 @@ import {
 } from '@/components/ui/select';
 import { useModulos } from '@/hooks/useModulos';
 import {
+  clampPosPrefsForArca,
   loadPosPrefs,
   normalizePosPrefs,
   savePosPrefs,
@@ -33,6 +35,7 @@ type TenantData = {
   punto_de_venta: number;
   plan: string;
   logo_url: string | null;
+  arca_configurado?: boolean;
 };
 
 const CONDICION_IVA_LABELS: Record<string, string> = {
@@ -85,6 +88,14 @@ export default function ConfiguracionPage() {
     } else {
       setError(null);
       setTenant(json);
+      setPosPrefs((prev) => {
+        const clamped = clampPosPrefsForArca(prev, json.arca_configurado === true);
+        if (JSON.stringify(normalizePosPrefs(prev)) !== JSON.stringify(clamped)) {
+          savePosPrefs(clamped);
+          return clamped;
+        }
+        return prev;
+      });
       setNombre(json.nombre ?? '');
       setRazonSocial(json.razon_social ?? '');
       setCuit(json.cuit ?? '');
@@ -484,15 +495,35 @@ export default function ConfiguracionPage() {
                 />
                 Permitir cobrar en ticket (negro)
               </label>
-              <label className="flex items-center gap-3 text-sm">
+              <label
+                className={`flex items-center gap-3 text-sm ${!tenant?.arca_configurado ? 'opacity-80' : ''}`}
+              >
                 <input
                   type="checkbox"
                   checked={posPrefs.aceptaFactura}
+                  disabled={!tenant?.arca_configurado}
                   onChange={(e) => updatePosPrefs({ aceptaFactura: e.target.checked })}
-                  className="size-4 rounded border-input"
+                  className="size-4 rounded border-input disabled:cursor-not-allowed"
                 />
                 Permitir cobrar en factura (blanco)
               </label>
+              {!tenant?.arca_configurado ? (
+                <p className="text-xs text-muted-foreground pl-7 -mt-2">
+                  {modulos.facturador_arca ? (
+                    <>
+                      Configurá certificado y datos de ARCA / AFIP en{' '}
+                      <Link href="/configuracion/arca" className="underline text-primary">
+                        Facturación electrónica (ARCA)
+                      </Link>{' '}
+                      para poder habilitar facturas en el POS.
+                    </>
+                  ) : (
+                    <>
+                      La facturación electrónica ARCA no está incluida en tu plan; en el POS solo podés cobrar en ticket hasta activar ese módulo.
+                    </>
+                  )}
+                </p>
+              ) : null}
               <label className="grid gap-1 text-sm max-w-xs">
                 <span className="text-muted-foreground">Comprobante por defecto al abrir el POS</span>
                 <Select

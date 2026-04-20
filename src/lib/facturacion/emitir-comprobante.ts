@@ -10,10 +10,14 @@ import type { Database } from '@/types/database';
 
 type TipoComprobante = Database['public']['Enums']['tipo_comprobante'];
 type CondicionIVA = Parameters<typeof determinarTipoFactura>[0];
-type ArcaConfigEmision = Pick<
-  Database['public']['Tables']['arca_config']['Row'],
-  'tenant_id' | 'cuit_emisor' | 'punto_de_venta' | 'ambiente'
->;
+
+/** Datos mínimos de `arca_config` para WSFE (CUIT y punto de venta obligatorios). */
+type ArcaConfigEmision = {
+  tenant_id: string;
+  cuit_emisor: string;
+  punto_de_venta: number;
+  ambiente: Database['public']['Enums']['arca_ambiente'];
+};
 
 type ClienteFacturaSnapshot = Pick<
   Database['public']['Tables']['cliente']['Row'],
@@ -319,8 +323,13 @@ export async function emitirComprobante(
       .eq('tenant_id', ctx.tenantId)
       .maybeSingle();
 
-    if (data?.cuit_emisor && data.punto_de_venta) {
-      arcaConfig = data;
+    if (data?.cuit_emisor && data.punto_de_venta != null) {
+      arcaConfig = {
+        tenant_id: data.tenant_id,
+        cuit_emisor: data.cuit_emisor,
+        punto_de_venta: data.punto_de_venta,
+        ambiente: data.ambiente,
+      };
     }
   }
 

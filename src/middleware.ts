@@ -1,6 +1,7 @@
 import { createServerClient } from '@supabase/ssr';
 import { NextResponse, type NextRequest } from 'next/server';
 
+import { resolveTenantBusinessSetupForUser } from '@/lib/dashboard/tenant-setup';
 import type { Database } from '@/types/database';
 
 const publicRoutes = [
@@ -90,6 +91,25 @@ export async function middleware(request: NextRequest) {
     const url = request.nextUrl.clone();
     url.pathname = '/login';
     return NextResponse.redirect(url);
+  }
+
+  if (user && !isPublicRoute && !path.startsWith('/api')) {
+    const setup = await resolveTenantBusinessSetupForUser(supabase, user.id);
+    if (setup === null) {
+      if (!path.startsWith('/cuenta-sin-perfil')) {
+        const url = request.nextUrl.clone();
+        url.pathname = '/cuenta-sin-perfil';
+        return NextResponse.redirect(url);
+      }
+    } else if (
+      !setup.complete &&
+      setup.rol === 'admin' &&
+      !path.startsWith('/onboarding')
+    ) {
+      const url = request.nextUrl.clone();
+      url.pathname = '/onboarding';
+      return NextResponse.redirect(url);
+    }
   }
 
   if (user && isPublicRoute && !request.nextUrl.pathname.startsWith('/api')) {

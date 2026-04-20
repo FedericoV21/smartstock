@@ -22,9 +22,11 @@ import {
 import { determinarTipoFactura } from '@/lib/facturacion/tipo-comprobante';
 import { clearCart, loadCart, saveCart } from '@/lib/pos/cart-persistence';
 import {
+  clampPosPrefsForArca,
   clampTipoComprobante,
   loadPosPrefs,
   normalizePosPrefs,
+  savePosPrefs,
   resolveTipoComprobanteInicial,
   type PosPrefs,
 } from '@/lib/pos/prefs';
@@ -175,6 +177,7 @@ export default function PosPage() {
   const [clienteId, setClienteId] = useState('');
   const [clienteSearch, setClienteSearch] = useState('');
   const [showClienteSearch, setShowClienteSearch] = useState(false);
+  const [arcaConfigurado, setArcaConfigurado] = useState(false);
   const [posPrefs, setPosPrefs] = useState<PosPrefs>(() => loadPosPrefs());
   const [tipoComprobante, setTipoComprobante] = useState<'ticket' | 'factura'>(() =>
     resolveTipoComprobanteInicial(loadPosPrefs()),
@@ -254,6 +257,15 @@ export default function PosPage() {
 
       if (tenantRes.ok) {
         const t = await tenantRes.json();
+        const arcaOk = t.arca_configurado === true;
+        setArcaConfigurado(arcaOk);
+        const rawPrefs = loadPosPrefs();
+        const prefsAjustadas = clampPosPrefsForArca(rawPrefs, arcaOk);
+        if (JSON.stringify(normalizePosPrefs(rawPrefs)) !== JSON.stringify(prefsAjustadas)) {
+          savePosPrefs(prefsAjustadas);
+        }
+        setPosPrefs(prefsAjustadas);
+        setTipoComprobante(resolveTipoComprobanteInicial(prefsAjustadas));
         setTenantIva(normalizarCondicionIVA(t.condicion_iva));
         setTenantLogoUrl(typeof t.logo_url === 'string' ? t.logo_url : null);
         setTenantCuit(typeof t.cuit === 'string' ? t.cuit : null);
@@ -275,11 +287,16 @@ export default function PosPage() {
 
   useEffect(() => {
     function syncPosPrefs() {
-      setPosPrefs(loadPosPrefs());
+      const raw = loadPosPrefs();
+      const clamped = clampPosPrefsForArca(raw, arcaConfigurado);
+      if (JSON.stringify(normalizePosPrefs(raw)) !== JSON.stringify(clamped)) {
+        savePosPrefs(clamped);
+      }
+      setPosPrefs(clamped);
     }
     window.addEventListener('focus', syncPosPrefs);
     return () => window.removeEventListener('focus', syncPosPrefs);
-  }, []);
+  }, [arcaConfigurado]);
 
   useEffect(() => {
     const p = normalizePosPrefs(posPrefs);
@@ -534,7 +551,7 @@ export default function PosPage() {
     showCobro ||
     showSearch;
 
-  const prefsPos = normalizePosPrefs(posPrefs);
+  const prefsPos = normalizePosPrefs(clampPosPrefsForArca(posPrefs, arcaConfigurado));
   const puedeAlternarComprobante = prefsPos.aceptaTicket && prefsPos.aceptaFactura;
 
   const { showHelp, setShowHelp } = usePosKeyboardShortcuts({
