@@ -1,0 +1,2047 @@
+{
+  "info": {
+    "_postman_id": "smartstock-nest-v1",
+    "name": "SmartStock Nest API v1",
+    "description": "Colecci├│n para probar el backend Nest con Bearer JWT (Supabase). Importar junto con smartstock-nest-local.postman_environment.json",
+    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+  },
+  "auth": {
+    "type": "bearer",
+    "bearer": [{ "key": "token", "value": "{{accessToken}}", "type": "string" }]
+  },
+  "item": [
+    {
+      "name": "Health & Auth",
+      "item": [
+        {
+          "name": "Health",
+          "request": {
+            "auth": { "type": "noauth" },
+            "method": "GET",
+            "url": "{{baseUrl}}/api/v1/health"
+          }
+        },
+        {
+          "name": "Auth ÔÇö me",
+          "request": { "method": "GET", "url": "{{baseUrl}}/api/v1/auth/me" }
+        },
+        {
+          "name": "Auth ÔÇö tenant",
+          "request": { "method": "GET", "url": "{{baseUrl}}/api/v1/auth/tenant" }
+        }
+      ]
+    },
+    {
+      "name": "Catalog",
+      "item": [
+        {
+          "name": "List categories",
+          "request": { "method": "GET", "url": "{{baseUrl}}/api/v1/categories?pageSize=20" }
+        },
+        {
+          "name": "Create category",
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"nombre\": \"Limpieza\",\n  \"descripcion\": \"Prueba Postman\"\n}"
+            },
+            "url": "{{baseUrl}}/api/v1/categories"
+          }
+        },
+        {
+          "name": "List suppliers",
+          "request": { "method": "GET", "url": "{{baseUrl}}/api/v1/suppliers" }
+        },
+        {
+          "name": "Merge suppliers (dry run)",
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"survivorId\": \"{{supplierId}}\",\n  \"loserIds\": [\"{{supplierLoserId}}\"],\n  \"dryRun\": true\n}"
+            },
+            "url": "{{baseUrl}}/api/v1/suppliers/merge"
+          }
+        },
+        {
+          "name": "List customers",
+          "request": { "method": "GET", "url": "{{baseUrl}}/api/v1/customers" }
+        }
+      ]
+    },
+    {
+      "name": "Cuenta corriente proveedor",
+      "item": [
+        {
+          "name": "Get cuenta corriente proveedor",
+          "request": {
+            "method": "GET",
+            "url": "{{baseUrl}}/api/v1/suppliers/{{supplierId}}/cuenta-corriente"
+          }
+        },
+        {
+          "name": "Patch condiciones pago proveedor",
+          "request": {
+            "method": "PATCH",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"cobro_modalidad\": \"por_comprobante\",\n  \"cobro_dias_plazo\": 15,\n  \"cobro_monto_minimo\": 0\n}"
+            },
+            "url": "{{baseUrl}}/api/v1/suppliers/{{supplierId}}/cuenta-corriente"
+          }
+        },
+        {
+          "name": "Extracto proveedor (mes)",
+          "request": {
+            "method": "GET",
+            "url": "{{baseUrl}}/api/v1/suppliers/{{supplierId}}/cuenta-corriente/extracto?periodo=mes"
+          }
+        },
+        {
+          "name": "Pago directo cuenta proveedor",
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"monto\": 5000,\n  \"tipo_pago\": \"efectivo\",\n  \"notas\": \"Ajuste deuda heredada\"\n}"
+            },
+            "url": "{{baseUrl}}/api/v1/suppliers/{{supplierId}}/cuenta-corriente/pago-cuenta"
+          }
+        },
+        {
+          "name": "Pago m├║ltiple obligaciones proveedor",
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"obligaciones\": [\n    { \"id\": \"{{obligacionProveedorId}}\", \"monto\": 1000 }\n  ],\n  \"tipo_pago\": \"transferencia\",\n  \"notas\": \"Pago facturas pendientes\"\n}"
+            },
+            "url": "{{baseUrl}}/api/v1/suppliers/{{supplierId}}/cuenta-corriente/pago-multiple"
+          }
+        }
+      ]
+    },
+    {
+      "name": "Cuenta corriente cliente",
+      "item": [
+        {
+          "name": "Get cuenta corriente",
+          "request": {
+            "method": "GET",
+            "url": "{{baseUrl}}/api/v1/customers/{{customerId}}/cuenta-corriente"
+          }
+        },
+        {
+          "name": "Patch condiciones cobro",
+          "request": {
+            "method": "PATCH",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"cobro_modalidad\": \"por_comprobante\",\n  \"cobro_dias_plazo\": 15,\n  \"cobro_monto_minimo\": 0\n}"
+            },
+            "url": "{{baseUrl}}/api/v1/customers/{{customerId}}/cuenta-corriente"
+          }
+        },
+        {
+          "name": "Extracto (mes)",
+          "request": {
+            "method": "GET",
+            "url": "{{baseUrl}}/api/v1/customers/{{customerId}}/cuenta-corriente/extracto?periodo=mes&sucursal_id={{branchId}}"
+          }
+        },
+        {
+          "name": "Movimientos del d├¡a",
+          "request": {
+            "method": "GET",
+            "url": "{{baseUrl}}/api/v1/customers/{{customerId}}/cuenta-corriente/movimientos-dia?sucursal_id={{branchId}}"
+          }
+        },
+        {
+          "name": "Registrar pago",
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"monto\": 5000,\n  \"tipo_pago\": \"efectivo\",\n  \"notas\": \"Cobro parcial\"\n}"
+            },
+            "url": "{{baseUrl}}/api/v1/customers/{{customerId}}/cuenta-corriente/pagos"
+          }
+        }
+      ]
+    },
+    {
+      "name": "Promotions",
+      "item": [
+        {
+          "name": "List promotions",
+          "request": {
+            "method": "GET",
+            "header": [{ "key": "X-Sucursal-Id", "value": "d0000001-0001-4001-8001-000000000001" }],
+            "url": "{{baseUrl}}/api/v1/promotions?activa=true"
+          }
+        },
+        {
+          "name": "Get promotion by id",
+          "request": {
+            "method": "GET",
+            "header": [{ "key": "X-Sucursal-Id", "value": "d0000001-0001-4001-8001-000000000001" }],
+            "url": "{{baseUrl}}/api/v1/promotions/e0000001-0001-4001-8001-000000000001"
+          }
+        },
+        {
+          "name": "Active promotions map",
+          "request": {
+            "method": "POST",
+            "header": [
+              { "key": "Content-Type", "value": "application/json" },
+              { "key": "X-Sucursal-Id", "value": "d0000001-0001-4001-8001-000000000001" }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"productoIds\": [\n    \"b0000001-0001-4001-8001-000000000002\"\n  ]\n}"
+            },
+            "url": "{{baseUrl}}/api/v1/promotions/active-map"
+          }
+        },
+        {
+          "name": "Create promotion",
+          "request": {
+            "method": "POST",
+            "header": [
+              { "key": "Content-Type", "value": "application/json" },
+              { "key": "X-Sucursal-Id", "value": "d0000001-0001-4001-8001-000000000001" }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"nombre\": \"2x1 demo\",\n  \"tipo\": \"n_x_m\",\n  \"cantidadLleva\": 2,\n  \"cantidadPaga\": 1,\n  \"productoIds\": [\"b0000001-0001-4001-8001-000000000002\"],\n  \"siempreVigente\": true\n}"
+            },
+            "url": "{{baseUrl}}/api/v1/promotions"
+          }
+        }
+      ]
+    },
+    {
+      "name": "Products",
+      "item": [
+        {
+          "name": "List products",
+          "request": { "method": "GET", "url": "{{baseUrl}}/api/v1/products?pageSize=10" }
+        },
+        {
+          "name": "List products extended (branch)",
+          "request": {
+            "method": "GET",
+            "url": "{{baseUrl}}/api/v1/products?sucursalId={{branchId}}&categoriaId={{categoryId}}&stockBajo=true&incluirVariantes=true"
+          }
+        },
+        {
+          "name": "List products tenant scope",
+          "request": {
+            "method": "GET",
+            "url": "{{baseUrl}}/api/v1/products?alcance=tenant&orden=actualizado&pageSize=25"
+          }
+        },
+        {
+          "name": "List product ids only",
+          "request": {
+            "method": "GET",
+            "url": "{{baseUrl}}/api/v1/products?sucursalId={{branchId}}&soloIds=true&proveedorId={{supplierId}}"
+          }
+        },
+        {
+          "name": "Get product by id",
+          "request": { "method": "GET", "url": "{{baseUrl}}/api/v1/products/{{productId}}" }
+        },
+        {
+          "name": "Create product",
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"codigo\": \"POST-001\",\n  \"nombre\": \"Producto Postman\",\n  \"unidad\": \"unidad\",\n  \"precioCosto\": 100,\n  \"precioVenta\": 150,\n  \"categoriaId\": \"{{categoryId}}\",\n  \"proveedorId\": \"{{supplierId}}\"\n}"
+            },
+            "url": "{{baseUrl}}/api/v1/products"
+          }
+        },
+        {
+          "name": "Search by barcode",
+          "request": {
+            "method": "GET",
+            "url": "{{baseUrl}}/api/v1/products?barcode=5901234123457"
+          }
+        },
+        {
+          "name": "Generate internal EAN-13 barcode",
+          "request": {
+            "method": "POST",
+            "url": "{{baseUrl}}/api/v1/products/{{productId}}/generate-barcode"
+          }
+        },
+        {
+          "name": "Upload product image (WebP)",
+          "request": {
+            "method": "POST",
+            "body": {
+              "mode": "formdata",
+              "formdata": [{ "key": "file", "type": "file", "src": "" }]
+            },
+            "url": "{{baseUrl}}/api/v1/products/{{productId}}/image"
+          }
+        },
+        {
+          "name": "Delete product image",
+          "request": {
+            "method": "DELETE",
+            "url": "{{baseUrl}}/api/v1/products/{{productId}}/image"
+          }
+        },
+        {
+          "name": "Bulk update margin %",
+          "request": {
+            "method": "PATCH",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"ids\": [\"{{productId}}\"],\n  \"porcentajeGanancia\": 35\n}"
+            },
+            "url": "{{baseUrl}}/api/v1/products/bulk-margin"
+          }
+        },
+        {
+          "name": "Merge duplicate product",
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"survivorId\": \"{{productId}}\",\n  \"loserIds\": [\"00000000-0000-4000-8000-000000000099\"],\n  \"dryRun\": true,\n  \"campos\": { \"nombre\": \"survivor\", \"stockMinimo\": \"max\" }\n}"
+            },
+            "url": "{{baseUrl}}/api/v1/products/merge"
+          }
+        },
+        {
+          "name": "Bulk deactivate by filter",
+          "request": {
+            "method": "PATCH",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"activo\": false,\n  \"filtros\": {\n    \"proveedorId\": \"{{supplierId}}\",\n    \"alcance\": \"tenant\"\n  }\n}"
+            },
+            "url": "{{baseUrl}}/api/v1/products/bulk-by-filter"
+          }
+        },
+        {
+          "name": "List product lots",
+          "request": {
+            "method": "GET",
+            "url": "{{baseUrl}}/api/v1/products/{{productId}}/lotes"
+          }
+        },
+        {
+          "name": "Create product lot",
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"sucursalId\": \"{{branchId}}\",\n  \"cantidad\": 24,\n  \"fechaVencimiento\": \"2026-12-31\",\n  \"precioCosto\": 85.5\n}"
+            },
+            "url": "{{baseUrl}}/api/v1/products/{{productId}}/lotes"
+          }
+        }
+      ]
+    },
+    {
+      "name": "Inventory",
+      "item": [
+        {
+          "name": "Alertas stock bajo",
+          "request": { "method": "GET", "url": "{{baseUrl}}/api/v1/inventory/alertas/stock-bajo" }
+        },
+        {
+          "name": "List movimientos",
+          "request": { "method": "GET", "url": "{{baseUrl}}/api/v1/inventory/movimientos?pageSize=10" }
+        },
+        {
+          "name": "Registrar entrada",
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"productoId\": \"{{productId}}\",\n  \"tipo\": \"entrada\",\n  \"cantidad\": 1,\n  \"motivo\": \"Prueba Postman\"\n}"
+            },
+            "url": "{{baseUrl}}/api/v1/inventory/movimientos"
+          }
+        }
+      ]
+    },
+    {
+      "name": "Importaciones",
+      "item": [
+        {
+          "name": "Preview import",
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"filas\": [\n    {\n      \"codigo\": \"IMP-001\",\n      \"nombre\": \"Fila preview\",\n      \"precioCosto\": 50,\n      \"precioVenta\": 99,\n      \"unidad\": \"unidad\"\n    }\n  ],\n  \"archivoNombre\": \"demo.xlsx\"\n}"
+            },
+            "url": "{{baseUrl}}/api/v1/importaciones/preview"
+          }
+        },
+        {
+          "name": "Ejecutar import",
+          "request": {
+            "method": "POST",
+            "header": [
+              { "key": "Content-Type", "value": "application/json" },
+              { "key": "Idempotency-Key", "value": "{{idempotencyKey}}" }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"filas\": [\n    {\n      \"codigo\": \"IMP-001\",\n      \"nombre\": \"Fila ejecutar\",\n      \"precioCosto\": 50,\n      \"precioVenta\": 99,\n      \"unidad\": \"unidad\",\n      \"stockActual\": 10\n    }\n  ],\n  \"archivoNombre\": \"demo.xlsx\"\n}"
+            },
+            "url": "{{baseUrl}}/api/v1/importaciones/ejecutar"
+          }
+        },
+        {
+          "name": "List import drafts",
+          "request": {
+            "method": "GET",
+            "url": "{{baseUrl}}/api/v1/importaciones/drafts?limit=40"
+          }
+        },
+        {
+          "name": "Create import draft",
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"payload\": {\n    \"version\": 1,\n    \"flujo\": \"importar\",\n    \"paso\": \"mapeo\",\n    \"origenImportacion\": \"importacion_excel\",\n    \"archivo\": {\n      \"nombreArchivo\": \"demo.xlsx\",\n      \"headers\": [\"Codigo\", \"Nombre\", \"Costo\"],\n      \"totalFilas\": 1\n    },\n    \"mapeo\": [\n      { \"headerOriginal\": \"Codigo\", \"campoDetectado\": \"codigo\", \"confianza\": \"exacta\", \"ignorar\": false },\n      { \"headerOriginal\": \"Nombre\", \"campoDetectado\": \"nombre\", \"confianza\": \"exacta\", \"ignorar\": false },\n      { \"headerOriginal\": \"Costo\", \"campoDetectado\": \"precio_costo\", \"confianza\": \"exacta\", \"ignorar\": false }\n    ]\n  }\n}"
+            },
+            "url": "{{baseUrl}}/api/v1/importaciones/drafts"
+          }
+        },
+        {
+          "name": "Replace draft chunks",
+          "request": {
+            "method": "PUT",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"filas\": [\n    { \"Codigo\": \"IMP-DRAFT-1\", \"Nombre\": \"Producto borrador\", \"Costo\": \"100\" }\n  ]\n}"
+            },
+            "url": "{{baseUrl}}/api/v1/importaciones/drafts/{{draftId}}/chunks"
+          }
+        },
+        {
+          "name": "Ejecutar import from draft",
+          "request": {
+            "method": "POST",
+            "header": [
+              { "key": "Content-Type", "value": "application/json" },
+              { "key": "Idempotency-Key", "value": "{{idempotencyKey}}" }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"draftId\": \"{{draftId}}\",\n  \"draftChunkStart\": 0,\n  \"draftChunksToProcess\": 1,\n  \"archivoNombre\": \"demo.xlsx\",\n  \"cargaId\": \"{{cargaId}}\"\n}"
+            },
+            "url": "{{baseUrl}}/api/v1/importaciones/ejecutar"
+          }
+        },
+        {
+          "name": "List import logs",
+          "request": {
+            "method": "GET",
+            "url": "{{baseUrl}}/api/v1/importaciones/logs?limit=80"
+          }
+        },
+        {
+          "name": "Revert import log",
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"motivo\": \"Prueba revertir carga demo\"\n}"
+            },
+            "url": "{{baseUrl}}/api/v1/importaciones/logs/{{importLogId}}/revert"
+          }
+        },
+        {
+          "name": "Download import log file",
+          "request": {
+            "method": "GET",
+            "url": "{{baseUrl}}/api/v1/importaciones/logs/{{importLogId}}/file"
+          }
+        },
+        {
+          "name": "List linkable products",
+          "request": {
+            "method": "GET",
+            "url": "{{baseUrl}}/api/v1/importaciones/linkable-products?q=yerba&proveedorId={{proveedorId}}"
+          }
+        },
+        {
+          "name": "Create supplier obligation",
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"proveedorId\": \"{{proveedorId}}\",\n  \"monto\": 15000,\n  \"modo\": \"condicion\",\n  \"fechaOperacionYmd\": \"2026-06-05\",\n  \"referencia\": \"Importaci├│n demo.xlsx\"\n}"
+            },
+            "url": "{{baseUrl}}/api/v1/importaciones/supplier-obligations"
+          }
+        },
+        {
+          "name": "Convert PDF to table",
+          "request": {
+            "method": "POST",
+            "body": {
+              "mode": "formdata",
+              "formdata": [
+                {
+                  "key": "archivo",
+                  "type": "file",
+                  "src": ""
+                }
+              ]
+            },
+            "url": "{{baseUrl}}/api/v1/importaciones/convert-pdf"
+          }
+        }
+      ]
+    },
+    {
+      "name": "AI",
+      "item": [
+        {
+          "name": "IA monthly limit",
+          "request": {
+            "method": "GET",
+            "url": "{{baseUrl}}/api/v1/ai/limits"
+          }
+        },
+        {
+          "name": "IA extract price list",
+          "request": {
+            "method": "POST",
+            "body": {
+              "mode": "formdata",
+              "formdata": [
+                {
+                  "key": "archivo",
+                  "type": "file",
+                  "src": ""
+                }
+              ]
+            },
+            "url": "{{baseUrl}}/api/v1/ai/extract"
+          }
+        },
+        {
+          "name": "IA preview price changes",
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"filas\": [\n    {\n      \"codigo\": \"IMP-001\",\n      \"nombre\": \"Producto demo\",\n      \"precioCosto\": 150\n    }\n  ]\n}"
+            },
+            "url": "{{baseUrl}}/api/v1/ai/preview"
+          }
+        }
+      ]
+    },
+    {
+      "name": "Config",
+      "item": [
+        {
+          "name": "Tenant profile",
+          "request": { "method": "GET", "url": "{{baseUrl}}/api/v1/config/tenant" }
+        },
+        {
+          "name": "Modules flags",
+          "request": { "method": "GET", "url": "{{baseUrl}}/api/v1/config/modules" }
+        },
+        {
+          "name": "Patch tenant profile",
+          "request": {
+            "method": "PATCH",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"nombre\": \"Demo SmartStock\",\n  \"horarios_atencion\": \"Lun-Vie 9-18\",\n  \"codigo_acceso\": \"DEMO01\"\n}"
+            },
+            "url": "{{baseUrl}}/api/v1/config/tenant",
+            "description": "Admin. Paridad PATCH /api/configuracion/tenant."
+          }
+        },
+        {
+          "name": "Get business prefs",
+          "request": {
+            "method": "GET",
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/config/business-prefs?for_config=1&sucursal_id={{sucursalId}}",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "v1", "config", "business-prefs"],
+              "query": [
+                { "key": "for_config", "value": "1" },
+                { "key": "sucursal_id", "value": "{{sucursalId}}" }
+              ]
+            }
+          }
+        },
+        {
+          "name": "Patch business prefs (tenant)",
+          "request": {
+            "method": "PATCH",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"scope\": \"tenant\",\n  \"business_prefs\": {\n    \"precioCostoSoloSube\": true,\n    \"registrarLotesPorIngreso\": true\n  }\n}"
+            },
+            "url": "{{baseUrl}}/api/v1/config/business-prefs"
+          }
+        },
+        {
+          "name": "List config users",
+          "request": {
+            "method": "GET",
+            "url": "{{baseUrl}}/api/v1/config/users",
+            "description": "Admin. Paridad GET /api/configuracion/usuarios."
+          }
+        },
+        {
+          "name": "Invite config user",
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"email\": \"nuevo.operador@example.com\",\n  \"nombre\": \"Nuevo\",\n  \"apellido\": \"Operador\",\n  \"rol\": \"operador\"\n}"
+            },
+            "url": "{{baseUrl}}/api/v1/config/users",
+            "description": "Requiere SUPABASE_URL + SUPABASE_SERVICE_ROLE_KEY en el backend."
+          }
+        },
+        {
+          "name": "Get MP Point config",
+          "request": {
+            "method": "GET",
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/config/mp-point?sucursal_id={{sucursalId}}",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "v1", "config", "mp-point"],
+              "query": [{ "key": "sucursal_id", "value": "{{sucursalId}}" }]
+            },
+            "description": "Paridad GET /api/configuracion/mp-point. Requiere facturador_pos."
+          }
+        },
+        {
+          "name": "Patch MP Point config",
+          "request": {
+            "method": "PATCH",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"habilitado\": true,\n  \"device_id\": \"YOUR_DEVICE_ID\",\n  \"access_token\": \"APP_USR-...\",\n  \"webhook_secret\": \"your-webhook-secret\"\n}"
+            },
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/config/mp-point?sucursal_id={{sucursalId}}",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "v1", "config", "mp-point"],
+              "query": [{ "key": "sucursal_id", "value": "{{sucursalId}}" }]
+            },
+            "description": "Admin. Cifra access_token con ARCA_ENCRYPTION_KEY."
+          }
+        },
+          "request": {
+            "method": "GET",
+            "url": "{{baseUrl}}/api/v1/config/payment-methods",
+            "description": "Paridad GET /api/configuracion/medios-de-pago. Requiere facturador_simple."
+          }
+        },
+        {
+          "name": "Create payment method",
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"nombre\": \"Transferencia bancaria\",\n  \"activo\": true,\n  \"orden\": 1,\n  \"opciones\": [\n    { \"cuotas\": 1, \"recargo_porcentaje\": -3 }\n  ]\n}"
+            },
+            "url": "{{baseUrl}}/api/v1/config/payment-methods",
+            "description": "Solo admin."
+          }
+        },
+        {
+          "name": "Update payment method",
+          "request": {
+            "method": "PATCH",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"nombre\": \"Tarjeta cr├®dito (actualizado)\",\n  \"opciones\": [\n    { \"cuotas\": 1, \"recargo_porcentaje\": 0 },\n    { \"cuotas\": 3, \"recargo_porcentaje\": 10 }\n  ]\n}"
+            },
+            "url": "{{baseUrl}}/api/v1/config/payment-methods/{{paymentMethodId}}",
+            "description": "Demo: 90000001-0001-4001-8001-000000000001"
+          }
+        },
+        {
+          "name": "Get quick payment shortcuts",
+          "request": {
+            "method": "GET",
+            "url": "{{baseUrl}}/api/v1/config/payment-methods/quick"
+          }
+        },
+        {
+          "name": "Upsert quick payment shortcuts",
+          "request": {
+            "method": "PUT",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"efectivo\": -2,\n  \"debito\": 0,\n  \"credito\": 5,\n  \"transferencia\": -1,\n  \"mixto\": 0\n}"
+            },
+            "url": "{{baseUrl}}/api/v1/config/payment-methods/quick",
+            "description": "Paridad PUT /api/configuracion/medios-de-pago/rapidos. Solo admin."
+          }
+        }
+      ]
+    },
+    {
+      "name": "Branches",
+      "item": [
+        {
+          "name": "List branches",
+          "request": { "method": "GET", "url": "{{baseUrl}}/api/v1/branches" }
+        },
+        {
+          "name": "Active branch context",
+          "request": { "method": "GET", "url": "{{baseUrl}}/api/v1/branches/active" }
+        },
+        {
+          "name": "Set active branch",
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"sucursalId\": \"d0000001-0001-4001-8001-000000000001\"\n}"
+            },
+            "url": "{{baseUrl}}/api/v1/branches/active"
+          }
+        },
+        {
+          "name": "Create branch",
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"codigo\": \"SUC2\",\n  \"nombre\": \"Dep├│sito Norte\",\n  \"perfilTicket\": \"copiar_negocio\"\n}"
+            },
+            "url": "{{baseUrl}}/api/v1/branches"
+          }
+        }
+      ]
+    },
+    {
+      "name": "Branch stock",
+      "item": [
+        {
+          "name": "List stock by branch",
+          "request": {
+            "method": "GET",
+            "header": [{ "key": "X-Sucursal-Id", "value": "d0000001-0001-4001-8001-000000000001" }],
+            "url": "{{baseUrl}}/api/v1/inventory/branch-stock?pageSize=25"
+          }
+        },
+        {
+          "name": "Materialize missing rows",
+          "request": { "method": "POST", "url": "{{baseUrl}}/api/v1/inventory/branch-stock/materialize" }
+        },
+        {
+          "name": "Product branch stock",
+          "request": {
+            "method": "GET",
+            "url": "{{baseUrl}}/api/v1/products/b0000001-0001-4001-8001-000000000001/branch-stock"
+          }
+        },
+        {
+          "name": "Enable product in branch",
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"sucursalId\": \"d0000001-0001-4001-8001-000000000001\"\n}"
+            },
+            "url": "{{baseUrl}}/api/v1/products/b0000001-0001-4001-8001-000000000001/branch-stock"
+          }
+        }
+      ]
+    },
+    {
+      "name": "Branch transfers",
+      "item": [
+        {
+          "name": "Preview transfer",
+          "request": {
+            "method": "GET",
+            "url": "{{baseUrl}}/api/v1/inventory/branch-transfers/preview?productoId=b0000001-0001-4001-8001-000000000001&sucursalOrigenId=d0000001-0001-4001-8001-000000000001&sucursalDestinoId=d0000001-0001-4001-8001-000000000001"
+          }
+        },
+        {
+          "name": "Send transfer",
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"productoId\": \"b0000001-0001-4001-8001-000000000001\",\n  \"sucursalOrigenId\": \"d0000001-0001-4001-8001-000000000001\",\n  \"sucursalDestinoId\": \"SUCURSAL_DESTINO_UUID\",\n  \"cantidad\": 5,\n  \"motivo\": \"Reposici├│n dep├│sito\"\n}"
+            },
+            "url": "{{baseUrl}}/api/v1/inventory/branch-transfers"
+          }
+        },
+        {
+          "name": "List pending (destination)",
+          "request": {
+            "method": "GET",
+            "url": "{{baseUrl}}/api/v1/inventory/branch-transfers?status=pendiente&sucursalDestinoId=d0000001-0001-4001-8001-000000000001"
+          }
+        },
+        {
+          "name": "Receive transfer",
+          "request": {
+            "method": "POST",
+            "url": "{{baseUrl}}/api/v1/inventory/branch-transfers/TRANSFER_UUID/receive"
+          }
+        }
+      ]
+    },
+    {
+      "name": "Branch pricing & PLU",
+      "item": [
+        {
+          "name": "Effective branch pricing",
+          "request": {
+            "method": "GET",
+            "header": [{ "key": "X-Sucursal-Id", "value": "d0000001-0001-4001-8001-000000000001" }],
+            "url": "{{baseUrl}}/api/v1/products/b0000001-0001-4001-8001-000000000001/branch-pricing/effective"
+          }
+        },
+        {
+          "name": "Upsert branch pricing",
+          "request": {
+            "method": "PATCH",
+            "header": [
+              { "key": "Content-Type", "value": "application/json" },
+              { "key": "X-Sucursal-Id", "value": "d0000001-0001-4001-8001-000000000001" }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"sucursalId\": \"d0000001-0001-4001-8001-000000000001\",\n  \"precioCosto\": 3000,\n  \"precioVenta\": 4500,\n  \"porcentajeGanancia\": null\n}"
+            },
+            "url": "{{baseUrl}}/api/v1/products/b0000001-0001-4001-8001-000000000001/branch-pricing"
+          }
+        },
+        {
+          "name": "Effective branch PLU (pesable)",
+          "request": {
+            "method": "GET",
+            "header": [{ "key": "X-Sucursal-Id", "value": "d0000001-0001-4001-8001-000000000001" }],
+            "url": "{{baseUrl}}/api/v1/products/b0000001-0001-4001-8001-000000000006/branch-plu/effective"
+          }
+        },
+        {
+          "name": "Upsert branch PLU",
+          "request": {
+            "method": "PATCH",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"sucursalId\": \"d0000001-0001-4001-8001-000000000001\",\n  \"plu\": \"5012\"\n}"
+            },
+            "url": "{{baseUrl}}/api/v1/products/b0000001-0001-4001-8001-000000000006/branch-plu"
+          }
+        }
+      ]
+    },
+    {
+      "name": "Scale export (Qendra)",
+      "item": [
+        {
+          "name": "Export Qendra CSV (GET by product)",
+          "request": {
+            "method": "GET",
+            "header": [{ "key": "X-Sucursal-Id", "value": "d0000001-0001-4001-8001-000000000001" }],
+            "url": "{{baseUrl}}/api/v1/products/export-qendra-balanza?producto_ids=b0000001-0001-4001-8001-000000000006"
+          }
+        },
+        {
+          "name": "Export Qendra CSV (POST)",
+          "request": {
+            "method": "POST",
+            "header": [
+              { "key": "Content-Type", "value": "application/json" },
+              { "key": "X-Sucursal-Id", "value": "d0000001-0001-4001-8001-000000000001" }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"productoIds\": [\"b0000001-0001-4001-8001-000000000006\"],\n  \"sectorFijo\": \"VERDULERIA\"\n}"
+            },
+            "url": "{{baseUrl}}/api/v1/products/export-qendra-balanza"
+          }
+        },
+        {
+          "name": "Materialize branch stock (admin)",
+          "request": {
+            "method": "POST",
+            "url": "{{baseUrl}}/api/v1/inventory/branch-stock/materialize"
+          }
+        }
+      ]
+    },
+    {
+      "name": "Product variants",
+      "item": [
+        {
+          "name": "List product variants",
+          "request": {
+            "method": "GET",
+            "header": [{ "key": "X-Sucursal-Id", "value": "d0000001-0001-4001-8001-000000000001" }],
+            "url": "{{baseUrl}}/api/v1/products/b0000001-0001-4001-8001-00000000000c/variants"
+          }
+        },
+        {
+          "name": "Create product variant",
+          "request": {
+            "method": "POST",
+            "header": [
+              { "key": "Content-Type", "value": "application/json" },
+              { "key": "X-Sucursal-Id", "value": "d0000001-0001-4001-8001-000000000001" }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"atributos\": { \"talle\": \"XL\", \"color\": \"Blanco\" },\n  \"codigo\": \"REM-XL\",\n  \"branchStock\": [\n    {\n      \"sucursalId\": \"d0000001-0001-4001-8001-000000000001\",\n      \"stockActual\": 4,\n      \"stockMinimo\": 1\n    }\n  ]\n}"
+            },
+            "url": "{{baseUrl}}/api/v1/products/b0000001-0001-4001-8001-00000000000c/variants"
+          }
+        },
+        {
+          "name": "Upsert variant branch stock",
+          "request": {
+            "method": "PATCH",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"sucursalId\": \"d0000001-0001-4001-8001-000000000001\",\n  \"stockActual\": 10,\n  \"stockMinimo\": 2,\n  \"ubicacion\": \"Estante A1\"\n}"
+            },
+            "url": "{{baseUrl}}/api/v1/products/b0000001-0001-4001-8001-00000000000c/variants/c1000001-0001-4001-8001-000000000001/branch-stock"
+          }
+        },
+        {
+          "name": "Variant stock movement",
+          "request": {
+            "method": "POST",
+            "header": [
+              { "key": "Content-Type", "value": "application/json" },
+              { "key": "X-Sucursal-Id", "value": "d0000001-0001-4001-8001-000000000001" }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"productoId\": \"b0000001-0001-4001-8001-00000000000c\",\n  \"productoVarianteId\": \"c1000001-0001-4001-8001-000000000001\",\n  \"tipo\": \"entrada\",\n  \"cantidad\": 2,\n  \"motivo\": \"Reposici├│n variante demo\"\n}"
+            },
+            "url": "{{baseUrl}}/api/v1/inventory/movimientos"
+          }
+        }
+      ]
+    },
+    {
+      "name": "Facturaci├│n & Pedidos",
+      "item": [
+        {
+          "name": "List comprobantes",
+          "request": { "method": "GET", "url": "{{baseUrl}}/api/v1/facturacion/comprobantes?pageSize=25" }
+        },
+        {
+          "name": "Get comprobante by id",
+          "request": {
+            "method": "GET",
+            "url": "{{baseUrl}}/api/v1/facturacion/comprobantes/{{comprobanteEmitidoId}}"
+          }
+        },
+        {
+          "name": "Download comprobante PDF",
+          "request": {
+            "method": "GET",
+            "url": "{{baseUrl}}/api/v1/facturacion/comprobantes/{{comprobanteEmitidoId}}/pdf"
+          }
+        },
+        {
+          "name": "Regenerate comprobante PDF",
+          "request": {
+            "method": "POST",
+            "url": "{{baseUrl}}/api/v1/facturacion/comprobantes/{{comprobanteEmitidoId}}/pdf/regenerate"
+          }
+        },
+        {
+          "name": "ARCA tray (pending/errors)",
+          "request": {
+            "method": "GET",
+            "url": "{{baseUrl}}/api/v1/facturacion/arca-tray"
+          }
+        },
+        {
+          "name": "ARCA tray alert count",
+          "request": {
+            "method": "GET",
+            "url": "{{baseUrl}}/api/v1/facturacion/arca-tray/alert"
+          }
+        },
+        {
+          "name": "ARCA tray by branch",
+          "request": {
+            "method": "GET",
+            "url": "{{baseUrl}}/api/v1/facturacion/arca-tray?sucursalId=d0000001-0001-4001-8001-000000000001"
+          }
+        },
+        {
+          "name": "Retry ARCA (CAE) on existing comprobante",
+          "request": {
+            "method": "POST",
+            "url": "{{baseUrl}}/api/v1/facturacion/comprobantes/{{comprobanteId}}/retry-arca"
+          }
+        },
+        {
+          "name": "Void comprobante without CAE",
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"motivo\": \"Error de carga en mostrador, se reemiti├│ el ticket.\"\n}"
+            },
+            "url": "{{baseUrl}}/api/v1/facturacion/comprobantes/{{comprobanteVoidId}}/void-without-cae"
+          }
+        },
+        {
+          "name": "Revert imported purchase invoice",
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"motivo\": \"Factura importada con datos incorrectos del proveedor.\"\n}"
+            },
+            "url": "{{baseUrl}}/api/v1/facturacion/comprobantes/COMPROBANTE_IMPORTADO_UUID/revert-imported"
+          }
+        },
+        {
+          "name": "Compra proveedor manual",
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"tipoComprobante\": \"factura_a\",\n  \"fecha\": \"2026-06-05\",\n  \"proveedorId\": \"{{supplierId}}\",\n  \"sucursalId\": \"{{branchId}}\",\n  \"puntoVenta\": 1,\n  \"numeroDocumento\": 12345,\n  \"items\": [\n    {\n      \"productoId\": \"{{productId}}\",\n      \"cantidad\": 10,\n      \"precioUnitario\": 100,\n      \"precioCosto\": 100,\n      \"ivaPorcentaje\": 21\n    }\n  ],\n  \"subtotal\": 1000,\n  \"ivaMonto\": 210,\n  \"total\": 1210,\n  \"importesManuales\": true,\n  \"actualizarCostos\": true,\n  \"afectaStock\": true,\n  \"afectaCuentaCorriente\": false\n}"
+            },
+            "url": "{{baseUrl}}/api/v1/facturacion/compra-proveedor-manual"
+          }
+        },
+        {
+          "name": "Emitir ticket",
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"tipo\": \"ticket\",\n  \"metodoPago\": \"efectivo\",\n  \"items\": [\n    {\n      \"productoId\": \"{{productId}}\",\n      \"cantidad\": 1,\n      \"precioUnitario\": 4200\n    }\n  ]\n}"
+            },
+            "url": "{{baseUrl}}/api/v1/facturacion/comprobantes"
+          }
+        },
+        {
+          "name": "Emitir ticket con recargo (credito 3 cuotas)",
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"tipo\": \"ticket\",\n  \"metodoPago\": \"credito\",\n  \"medioPagoOpcionId\": \"90000001-0001-4001-8001-000000000012\",\n  \"items\": [\n    {\n      \"productoId\": \"{{productId}}\",\n      \"cantidad\": 1,\n      \"precioUnitario\": 4200\n    }\n  ]\n}"
+            },
+            "url": "{{baseUrl}}/api/v1/facturacion/comprobantes",
+            "description": "Opci├│n demo 3 cuotas +12.5% recargo. Verifica total_mercaderia, financiacion_monto en respuesta."
+          }
+        },
+        {
+          "name": "Emitir ticket pago mixto",
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"tipo\": \"ticket\",\n  \"metodoPago\": \"mixto\",\n  \"metodoPagoDetalle\": {\n    \"efectivo\": 2000,\n    \"debito\": 2200\n  },\n  \"items\": [\n    {\n      \"productoId\": \"{{productId}}\",\n      \"cantidad\": 1,\n      \"precioUnitario\": 4200\n    }\n  ]\n}"
+            },
+            "url": "{{baseUrl}}/api/v1/facturacion/comprobantes",
+            "description": "Suma detalle debe igualar total mercader├¡a (sin recargo). metodo_pago=mixto en comprobante."
+          }
+        },
+        {
+          "name": "List pedidos",
+          "request": { "method": "GET", "url": "{{baseUrl}}/api/v1/pedidos" }
+        }
+      ]
+    },
+    {
+      "name": "Pedidos workflow",
+      "item": [
+        {
+          "name": "List workflow estados (paridad /api/pedidos/workflow-estados)",
+          "request": {
+            "method": "GET",
+            "url": "{{baseUrl}}/api/v1/pedidos/workflow-estados",
+            "description": "Requiere m├│dulo pedidos. Respuesta: { data: { estados, transiciones } }."
+          }
+        },
+        {
+          "name": "List workflow estados (config admin)",
+          "request": {
+            "method": "GET",
+            "url": "{{baseUrl}}/api/v1/pedidos/workflow-estados?for_config=1",
+            "description": "Incluye estados inactivos. Solo admin."
+          }
+        },
+        {
+          "name": "Create workflow estado",
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"slug\": \"en_preparacion\",\n  \"nombre\": \"En preparaci├│n\",\n  \"color\": \"#3B82F6\",\n  \"fase\": \"confirmado\",\n  \"orden\": 15,\n  \"activo\": true\n}"
+            },
+            "url": "{{baseUrl}}/api/v1/pedidos/workflow-estados"
+          }
+        },
+        {
+          "name": "Update workflow estado",
+          "request": {
+            "method": "PATCH",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"nombre\": \"Preparando pedido\",\n  \"activo\": true\n}"
+            },
+            "url": "{{baseUrl}}/api/v1/pedidos/workflow-estados/WORKFLOW_ESTADO_UUID"
+          }
+        },
+        {
+          "name": "Replace workflow transiciones (paridad PUT)",
+          "request": {
+            "method": "PUT",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"transiciones\": [\n    { \"desde_id\": \"WORKFLOW_BORRADOR_UUID\", \"hacia_id\": \"WORKFLOW_CONFIRMADO_UUID\" },\n    { \"desde_id\": \"WORKFLOW_BORRADOR_UUID\", \"hacia_id\": \"WORKFLOW_CANCELADO_UUID\" }\n  ]\n}"
+            },
+            "url": "{{baseUrl}}/api/v1/pedidos/workflow-transiciones"
+          }
+        },
+        {
+          "name": "Cambiar estado pedido (workflow)",
+          "request": {
+            "method": "PATCH",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"workflow_estado_id\": \"{{workflowEstadoId}}\",\n  \"stock_bloqueante\": true\n}"
+            },
+            "url": "{{baseUrl}}/api/v1/pedidos/{{pedidoId}}/estado"
+          }
+        }
+      ]
+    },
+    {
+      "name": "Pricing",
+      "item": [
+        {
+          "name": "Historial precios (paridad /api/precios/historial)",
+          "request": {
+            "method": "GET",
+            "url": "{{baseUrl}}/api/v1/pricing/historial?producto_id={{productId}}&origen=importacion_excel&pagina=1&por_pagina=50",
+            "description": "Requiere m├│dulo ia_precios. Respuesta: { data: { historial, total, pagina, por_pagina } } con ├¡tems snake_case y producto anidado."
+          }
+        },
+        {
+          "name": "Sugerencia precio por margen",
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"productoId\": \"{{productId}}\",\n  \"margenObjetivoPct\": 35\n}"
+            },
+            "url": "{{baseUrl}}/api/v1/pricing/sugerencias"
+          }
+        }
+      ]
+    },
+    {
+      "name": "Analyzer",
+      "item": [
+        {
+          "name": "Profitability dashboard (cierre)",
+          "request": {
+            "method": "GET",
+            "url": "{{baseUrl}}/api/v1/analyzer/profitability-dashboard",
+            "description": "Admin/visor. Requiere analizador_rentabilidad en modulo_config."
+          }
+        },
+        {
+          "name": "Margin analysis",
+          "request": {
+            "method": "GET",
+            "url": "{{baseUrl}}/api/v1/analyzer/margin?desde=2026-06-01&hasta=2026-06-30"
+          }
+        },
+        {
+          "name": "BCG ranking",
+          "request": {
+            "method": "GET",
+            "url": "{{baseUrl}}/api/v1/analyzer/ranking?desde=2026-06-01&hasta=2026-06-30"
+          }
+        },
+        {
+          "name": "Replenishment forecast",
+          "request": {
+            "method": "GET",
+            "url": "{{baseUrl}}/api/v1/analyzer/forecast"
+          }
+        },
+        {
+          "name": "Inflation radar",
+          "request": {
+            "method": "GET",
+            "url": "{{baseUrl}}/api/v1/analyzer/inflation-radar"
+          }
+        },
+        {
+          "name": "Opportunity alerts",
+          "request": {
+            "method": "GET",
+            "url": "{{baseUrl}}/api/v1/analyzer/opportunity-alerts"
+          }
+        },
+        {
+          "name": "Price lists ÔÇö list",
+          "request": {
+            "method": "GET",
+            "url": "{{baseUrl}}/api/v1/analyzer/price-lists",
+            "description": "Admin/visor. Requiere importador_excel."
+          }
+        },
+        {
+          "name": "Price lists ÔÇö preview upload",
+          "request": {
+            "method": "POST",
+            "body": {
+              "mode": "formdata",
+              "formdata": [
+                { "key": "proveedor_id", "value": "{{supplierId}}", "type": "text" },
+                { "key": "archivo", "type": "file", "src": "" }
+              ]
+            },
+            "url": "{{baseUrl}}/api/v1/analyzer/price-lists/preview",
+            "description": "Multipart archivo + proveedor_id. Excel/CSV sin IA; PDF/imagen con ia_precios."
+          }
+        },
+        {
+          "name": "Price lists ÔÇö confirm (JSON items)",
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"proveedor_id\": \"{{supplierId}}\",\n  \"nombre\": \"Lista demo Postman\",\n  \"descuento_proveedor_pct\": 5,\n  \"items\": [\n    { \"codigo_proveedor\": \"DEMO1\", \"nombre\": \"Producto demo\", \"precio_lista\": 1000 }\n  ]\n}"
+            },
+            "url": "{{baseUrl}}/api/v1/analyzer/price-lists/confirm",
+            "description": "Admin/operador. MVP sin upload: items pre-extra├¡dos en JSON."
+          }
+        },
+        {
+          "name": "Price lists ÔÇö detail",
+          "request": {
+            "method": "GET",
+            "url": "{{baseUrl}}/api/v1/analyzer/price-lists/{{priceListId}}"
+          }
+        },
+        {
+          "name": "Price lists ÔÇö matching",
+          "request": {
+            "method": "POST",
+            "url": "{{baseUrl}}/api/v1/analyzer/price-lists/{{priceListId}}/matching",
+            "description": "C├│digo + nombre (sin IA v1)."
+          }
+        },
+        {
+          "name": "Price lists ÔÇö analysis",
+          "request": {
+            "method": "POST",
+            "url": "{{baseUrl}}/api/v1/analyzer/price-lists/{{priceListId}}/analysis"
+          }
+        },
+        {
+          "name": "Price lists ÔÇö apply",
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"contribuir_radar\": true\n}"
+            },
+            "url": "{{baseUrl}}/api/v1/analyzer/price-lists/{{priceListId}}/apply"
+          }
+        },
+        {
+          "name": "Price lists ÔÇö compare temporal",
+          "request": {
+            "method": "GET",
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/analyzer/price-lists/compare/temporal?proveedor_id={{supplierId}}",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "v1", "analyzer", "price-lists", "compare", "temporal"],
+              "query": [{ "key": "proveedor_id", "value": "{{supplierId}}" }]
+            },
+            "description": "Paridad GET /api/analizador/listas/comparar?proveedor_id="
+          }
+        },
+        {
+          "name": "Price lists ÔÇö compare N listas",
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"lista_ids\": [\n    \"{{priceListId}}\",\n    \"{{priceListId2}}\"\n  ]\n}"
+            },
+            "url": "{{baseUrl}}/api/v1/analyzer/price-lists/compare"
+          }
+        },
+        {
+          "name": "Price lists ÔÇö simulate GET",
+          "request": {
+            "method": "GET",
+            "url": "{{baseUrl}}/api/v1/analyzer/price-lists/{{priceListId}}/simulate"
+          }
+        },
+        {
+          "name": "Price lists ÔÇö simulate PATCH",
+          "request": {
+            "method": "PATCH",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"items\": [\n    {\n      \"item_id\": \"{{priceListItemId}}\",\n      \"precio_venta_decidido\": 1500,\n      \"incluir_en_aplicacion\": true\n    }\n  ]\n}"
+            },
+            "url": "{{baseUrl}}/api/v1/analyzer/price-lists/{{priceListId}}/simulate"
+          }
+        },
+        {
+          "name": "Price lists ÔÇö clone branch",
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"sucursal_destino_id\": \"{{branchId}}\"\n}"
+            },
+            "url": "{{baseUrl}}/api/v1/analyzer/price-lists/{{priceListId}}/clone-branch",
+            "description": "Requiere importador_excel. Paridad clonar-sucursal."
+          }
+        },
+        {
+          "name": "Reporte ejecutivo IA",
+          "request": {
+            "method": "POST",
+            "url": "{{baseUrl}}/api/v1/analyzer/price-lists/{{priceListId}}/report",
+            "description": "Paridad POST /api/analizador/listas/[id]/reporte. Requiere GEMINI_API_KEY + ia_precios."
+          }
+        },
+        {
+          "name": "Comparar proveedores",
+          "request": {
+            "method": "GET",
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/analyzer/suppliers/compare?producto_id=&categoria_id=",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "v1", "analyzer", "suppliers", "compare"],
+              "query": [
+                { "key": "producto_id", "value": "" },
+                { "key": "categoria_id", "value": "" }
+              ]
+            },
+            "description": "Paridad GET /api/analizador/proveedores/comparar"
+          }
+        },
+        {
+          "name": "Perfil proveedor",
+          "request": {
+            "method": "GET",
+            "url": "{{baseUrl}}/api/v1/analyzer/suppliers/{{supplierId}}/profile",
+            "description": "Paridad GET /api/analizador/proveedores/[id]/perfil"
+          }
+        },
+        {
+          "name": "CC analizador resumen",
+          "request": {
+            "method": "GET",
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/analyzer/cuenta-corriente?cliente_id={{customerId}}",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "v1", "analyzer", "cuenta-corriente"],
+              "query": [{ "key": "cliente_id", "value": "{{customerId}}" }]
+            },
+            "description": "Paridad GET /api/analizador/cuenta-corriente"
+          }
+        },
+        {
+          "name": "CC analizador pago",
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"cliente_id\": \"{{customerId}}\",\n  \"monto\": 500,\n  \"tipo_pago\": \"efectivo\"\n}"
+            },
+            "url": "{{baseUrl}}/api/v1/analyzer/cuenta-corriente/pago",
+            "description": "Paridad POST /api/analizador/cuenta-corriente/pago"
+          }
+        }
+      ]
+    },
+    {
+      "name": "Caja POS",
+      "item": [
+        {
+          "name": "Cajas disponibles",
+          "request": {
+            "method": "GET",
+            "url": "{{baseUrl}}/api/v1/caja/disponibles?sucursal_id={{branchId}}",
+            "description": "Requiere facturador_pos. Demo cajaId: c0000001-0001-4001-8001-000000000001"
+          }
+        },
+        {
+          "name": "Turno actual",
+          "request": {
+            "method": "GET",
+            "url": "{{baseUrl}}/api/v1/caja/turno/actual?sucursal_id={{branchId}}"
+          }
+        },
+        {
+          "name": "Abrir turno",
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"caja_id\": \"{{cajaId}}\",\n  \"monto_inicial\": 5000\n}"
+            },
+            "url": "{{baseUrl}}/api/v1/caja/turno/abrir"
+          }
+        },
+        {
+          "name": "Cerrar turno (cierre Z)",
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"efectivo_contado\": 5000,\n  \"usar_efectivo_esperado_del_sistema\": true\n}"
+            },
+            "url": "{{baseUrl}}/api/v1/caja/turno/cerrar",
+            "description": "Alternativa: efectivo_contado manual. usar_efectivo_esperado_del_sistema evita conteo si coincid├¡s con sistema."
+          }
+        },
+        {
+          "name": "Historial cierres Z",
+          "request": {
+            "method": "GET",
+            "url": "{{baseUrl}}/api/v1/caja/cierre-z?sucursal_id={{branchId}}&caja_id={{cajaId}}"
+          }
+        },
+        {
+          "name": "Historial turnos",
+          "request": {
+            "method": "GET",
+            "url": "{{baseUrl}}/api/v1/caja/turnos/historial?sucursal_id={{branchId}}"
+          }
+        }
+      ]
+    },
+    {
+      "name": "MP Point pagos",
+      "item": [
+        {
+          "name": "Listar terminales MP Point",
+          "request": {
+            "method": "GET",
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/pagos/mp-point/devices?sucursal_id={{sucursalId}}",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "v1", "pagos", "mp-point", "devices"],
+              "query": [{ "key": "sucursal_id", "value": "{{sucursalId}}" }]
+            },
+            "description": "Paridad GET /api/pagos/mp-point/devices. Configuraci├│n MP con access_token."
+          }
+        },
+        {
+          "name": "Iniciar cobro terminal",
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"comprobante_id\": \"{{comprobanteId}}\",\n  \"total\": 1500\n}"
+            },
+            "url": "{{baseUrl}}/api/v1/pagos/mp-point/iniciar",
+            "description": "Paridad POST /api/pagos/mp-point/iniciar. Borrador ÔåÆ pendiente_posnet."
+          }
+        },
+        {
+          "name": "Estado cobro MP Point",
+          "request": {
+            "method": "GET",
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/pagos/mp-point/estado?comprobante_id={{comprobanteId}}",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "v1", "pagos", "mp-point", "estado"],
+              "query": [{ "key": "comprobante_id", "value": "{{comprobanteId}}" }]
+            },
+            "description": "Solo lectura (sin efectos). Rate-limit 5s."
+          }
+        },
+        {
+          "name": "Sincronizar cobro MP Point",
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"comprobante_id\": \"{{comprobanteId}}\"\n}"
+            },
+            "url": "{{baseUrl}}/api/v1/pagos/mp-point/sincronizar",
+            "description": "Paridad POST /api/pagos/mp-point/sincronizar. Consulta MP y dispara reconciliaci├│n si el intent finaliz├│. Rate-limit 5s."
+          }
+        },
+        {
+          "name": "Cancelar cobro terminal",
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"comprobante_id\": \"{{comprobanteId}}\"\n}"
+            },
+            "url": "{{baseUrl}}/api/v1/pagos/mp-point/cancelar"
+          }
+        },
+        {
+          "name": "Pendiente recuperaci├│n POS",
+          "request": {
+            "method": "GET",
+            "url": "{{baseUrl}}/api/v1/pagos/mp-point/estado/pendiente"
+          }
+        },
+        {
+          "name": "Webhook MP Point (p├║blico)",
+          "request": {
+            "auth": { "type": "noauth" },
+            "method": "POST",
+            "header": [
+              { "key": "Content-Type", "value": "application/json" },
+              { "key": "x-signature", "value": "ts=...,v1=...", "description": "HMAC SHA256 manifest MP" },
+              { "key": "x-request-id", "value": "req-test-1" }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"data\": { \"id\": \"{{mpPointIntentId}}\" }\n}"
+            },
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/pagos/mp-point/webhook?data.id={{mpPointIntentId}}",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "v1", "pagos", "mp-point", "webhook"],
+              "query": [{ "key": "data.id", "value": "{{mpPointIntentId}}" }]
+            },
+            "description": "Paridad POST /api/pagos/mp-point/webhook. Sin JWT. Valida webhook_secret de mp_point_config. Responde 200 y procesa async."
+          }
+        }
+      ]
+    },
+    {
+      "name": "POS cat├ílogo",
+      "item": [
+        {
+          "name": "Buscar productos",
+          "request": {
+            "method": "GET",
+            "url": "{{baseUrl}}/api/v1/pos/buscar-productos?sucursal_id={{branchId}}&q=cafe",
+            "description": "Requiere facturador_pos. Respuesta snake_case."
+          }
+        },
+        {
+          "name": "Cat├ílogo b├║squeda (paginado)",
+          "request": {
+            "method": "GET",
+            "url": "{{baseUrl}}/api/v1/pos/catalogo-busqueda?sucursal_id={{branchId}}&offset=0&limit=100"
+          }
+        },
+        {
+          "name": "Productos por IDs",
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"sucursal_id\": \"{{branchId}}\",\n  \"producto_ids\": [\"{{productId}}\"]\n}"
+            },
+            "url": "{{baseUrl}}/api/v1/pos/productos-por-ids"
+          }
+        },
+        {
+          "name": "Buscar promociones combo",
+          "request": {
+            "method": "GET",
+            "url": "{{baseUrl}}/api/v1/pos/buscar-promociones?sucursal_id={{branchId}}&q=combo"
+          }
+        },
+        {
+          "name": "Proveedores POS",
+          "request": {
+            "method": "GET",
+            "url": "{{baseUrl}}/api/v1/pos/proveedores?sucursal_id={{branchId}}"
+          }
+        },
+        {
+          "name": "Crear borrador",
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"sucursal_id\": \"{{branchId}}\",\n  \"caja_id\": \"{{cajaId}}\",\n  \"tipo_comprobante_pos\": \"ticket\",\n  \"items\": [\n    {\n      \"producto_id\": \"{{productId}}\",\n      \"cantidad\": 1,\n      \"precio_unitario\": 1500\n    }\n  ]\n}"
+            },
+            "url": "{{baseUrl}}/api/v1/pos/comprobante-borrador"
+          }
+        },
+        {
+          "name": "Eliminar borrador",
+          "request": {
+            "method": "DELETE",
+            "url": "{{baseUrl}}/api/v1/pos/comprobante-borrador?id={{comprobanteBorradorId}}&sucursal_id={{branchId}}",
+            "description": "Guardar id devuelto por Crear borrador en variable comprobanteBorradorId."
+          }
+        }
+      ]
+    },
+    {
+      "name": "Tesoreria",
+      "item": [
+        {
+          "name": "Overview (panel)",
+          "request": {
+            "method": "GET",
+            "url": "{{baseUrl}}/api/v1/tesoreria?sucursal_id={{branchId}}",
+            "description": "Admin/operador. Requiere facturador_simple y business_prefs.cajaInterna.habilitado."
+          }
+        },
+        {
+          "name": "Ingreso efectivo",
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"monto\": 5000,\n  \"notas\": \"Ingreso demo Postman\"\n}"
+            },
+            "url": "{{baseUrl}}/api/v1/tesoreria/ingreso-efectivo?sucursal_id={{branchId}}"
+          }
+        },
+        {
+          "name": "Registrar cheque",
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"numero\": \"12345678\",\n  \"banco\": \"Galicia\",\n  \"monto\": 25000\n}"
+            },
+            "url": "{{baseUrl}}/api/v1/tesoreria/cheques?sucursal_id={{branchId}}"
+          }
+        },
+        {
+          "name": "Pago proveedor",
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"proveedor_id\": \"{{supplierId}}\",\n  \"monto\": 1000,\n  \"tipo_pago\": \"efectivo\"\n}"
+            },
+            "url": "{{baseUrl}}/api/v1/tesoreria/pago-proveedor?sucursal_id={{branchId}}"
+          }
+        },
+        {
+          "name": "Obligaciones proveedor",
+          "request": {
+            "method": "GET",
+            "url": "{{baseUrl}}/api/v1/tesoreria/obligaciones?proveedor_id={{supplierId}}&sucursal_id={{branchId}}"
+          }
+        }
+      ]
+    },
+    {
+      "name": "Dashboard",
+      "item": [
+        {
+          "name": "Metrics (metricas)",
+          "request": {
+            "method": "GET",
+            "url": "{{baseUrl}}/api/v1/dashboard/metrics",
+            "description": "Admin/visor. KPIs del mes: productos activos, valor inventario, comprobantes, ventas netas."
+          }
+        }
+      ]
+    },
+    {
+      "name": "Reports",
+      "item": [
+        {
+          "name": "Summary KPIs (resumen)",
+          "request": {
+            "method": "GET",
+            "header": [{ "key": "X-Sucursal-Id", "value": "{{branchId}}" }],
+            "url": "{{baseUrl}}/api/v1/reports/summary?periodo=hoy"
+          }
+        },
+        {
+          "name": "Libro IVA",
+          "request": {
+            "method": "GET",
+            "header": [{ "key": "X-Sucursal-Id", "value": "{{branchId}}" }],
+            "url": "{{baseUrl}}/api/v1/reports/libro-iva?periodo=mes"
+          }
+        },
+        {
+          "name": "Sales period summary (admin)",
+          "request": {
+            "method": "GET",
+            "header": [{ "key": "X-Sucursal-Id", "value": "{{branchId}}" }],
+            "url": "{{baseUrl}}/api/v1/reports/sales-period-summary?periodo=mes"
+          }
+        },
+        {
+          "name": "Sales by product",
+          "request": {
+            "method": "GET",
+            "header": [{ "key": "X-Sucursal-Id", "value": "{{branchId}}" }],
+            "url": "{{baseUrl}}/api/v1/reports/sales-by-product?periodo=mes&limit=50"
+          }
+        },
+        {
+          "name": "POS consumer sales",
+          "request": {
+            "method": "GET",
+            "header": [{ "key": "X-Sucursal-Id", "value": "{{branchId}}" }],
+            "url": "{{baseUrl}}/api/v1/reports/pos-consumer-sales?periodo=hoy&franja=hora"
+          }
+        },
+        {
+          "name": "Supplier replenishment (reposicion-proveedor)",
+          "request": {
+            "method": "GET",
+            "header": [{ "key": "X-Sucursal-Id", "value": "{{branchId}}" }],
+            "url": "{{baseUrl}}/api/v1/reports/supplier-replenishment?periodo=mes&dias_objetivo=14&filtro=sugerencias"
+          }
+        },
+        {
+          "name": "Net profits (ganancias-netas)",
+          "request": {
+            "method": "GET",
+            "header": [{ "key": "X-Sucursal-Id", "value": "{{branchId}}" }],
+            "url": "{{baseUrl}}/api/v1/reports/net-profits?periodo=mes"
+          }
+        },
+        {
+          "name": "Supplier spend (proveedores-gasto)",
+          "request": {
+            "method": "GET",
+            "header": [{ "key": "X-Sucursal-Id", "value": "{{branchId}}" }],
+            "url": "{{baseUrl}}/api/v1/reports/supplier-spend?periodo=mes"
+          }
+        },
+        {
+          "name": "Customer debt (clientes-deuda)",
+          "request": {
+            "method": "GET",
+            "header": [{ "key": "X-Sucursal-Id", "value": "{{branchId}}" }],
+            "url": "{{baseUrl}}/api/v1/reports/customer-debt?estado=todos"
+          }
+        }
+      ]
+    },
+    {
+      "name": "ARCA",
+      "item": [
+        {
+          "name": "Homologation readiness (NB-ARC-106)",
+          "request": {
+            "method": "GET",
+            "url": "{{baseUrl}}/api/v1/arca/homologation-readiness",
+            "description": "Checklist pre-vuelo sin llamar AFIP. listo_para_homologacion debe ser true."
+          }
+        },
+        {
+          "name": "ARCA logs (evidencia)",
+          "request": {
+            "method": "GET",
+            "url": "{{baseUrl}}/api/v1/arca/logs?limit=20",
+            "description": "├Ültimos logs WSAA/WSFE con XML truncado."
+          }
+        },
+        {
+          "name": "Get ARCA config",
+          "request": {
+            "method": "GET",
+            "url": "{{baseUrl}}/api/v1/arca/config?sucursalId={{sucursalId}}",
+            "description": "Admin. Config por sucursal (paridad frontend). Requiere facturador_arca."
+          }
+        },
+        {
+          "name": "Upsert ARCA config",
+          "request": {
+            "method": "PUT",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"sucursalId\": \"{{sucursalId}}\",\n  \"cuitEmisor\": \"20123456789\",\n  \"puntoDeVenta\": 3,\n  \"ambiente\": \"homologacion\",\n  \"certificadoPem\": \"-----BEGIN CERTIFICATE-----\\n...\\n-----END CERTIFICATE-----\",\n  \"clavePrivadaPem\": \"-----BEGIN PRIVATE KEY-----\\n...\\n-----END PRIVATE KEY-----\"\n}"
+            },
+            "url": "{{baseUrl}}/api/v1/arca/config",
+            "description": "Admin. Usar __KEEP_EXISTING__ en certificadoPem/clavePrivadaPem para conservar. Limpia ticket si cambia ambiente."
+          }
+        },
+        {
+          "name": "Test connection (WSAA + WSFE)",
+          "request": {
+            "method": "POST",
+            "url": "{{baseUrl}}/api/v1/arca/test-connection?sucursalId={{sucursalId}}",
+            "description": "Paridad frontend Probar conexi├│n: ticket WSAA + FECompUltimoAutorizado factura_b."
+          }
+        },
+        {
+          "name": "Sync numeraci├│n AFIP vs local",
+          "request": {
+            "method": "POST",
+            "url": "{{baseUrl}}/api/v1/arca/sync-numeracion?sucursalId={{sucursalId}}",
+            "description": "Compara ├║ltimo n├║mero AFIP vs local para factura A/B/C."
+          }
+        },
+        {
+          "name": "Cert status (vencimiento)",
+          "request": {
+            "method": "GET",
+            "url": "{{baseUrl}}/api/v1/arca/cert-status?sucursalId={{sucursalId}}",
+            "description": "Estado del certificado digital (d├¡as restantes, alertas)."
+          }
+        },
+        {
+          "name": "Emit factura B homo (v9 CAE inline)",
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"tipo\": \"factura_b\",\n  \"metodoPago\": \"efectivo\",\n  \"items\": [\n    {\n      \"productoId\": \"{{productId}}\",\n      \"cantidad\": 1\n    }\n  ]\n}"
+            },
+            "url": "{{baseUrl}}/api/v1/facturacion/comprobantes",
+            "description": "NB-ARC-106 flujo A. Requiere facturador_arca, config homo y ARCA_WORKER_STUB=false. Responde con CAE si AFIP aprueba."
+          }
+        },
+        {
+          "name": "Ensure WSAA ticket",
+          "request": {
+            "method": "PUT",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"forceRenew\": false\n}"
+            },
+            "url": "{{baseUrl}}/api/v1/arca/wsaa/ticket",
+            "description": "Admin. Renueva ticket WSAA si est├í vencido."
+          }
+        },
+        {
+          "name": "Solicitar CAE (WSFE)",
+          "request": {
+            "method": "PUT",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"comprobanteId\": \"{{comprobanteId}}\",\n  \"clienteDocumento\": null,\n  \"alicuotaIva\": 21\n}"
+            },
+            "url": "{{baseUrl}}/api/v1/arca/wsfe/cae",
+            "description": "Admin. Comprobante demo pendiente_arca: c0000001-0001-4001-8001-000000000003. Ver homologacion-arca-e2e.md."
+          }
+        },
+        {
+          "name": "Run ARCA jobs (internal worker)",
+          "request": {
+            "auth": { "type": "noauth" },
+            "method": "POST",
+            "header": [{ "key": "x-arca-worker-secret", "value": "{{arcaWorkerSecret}}" }],
+            "url": "{{baseUrl}}/api/v1/internal/arca-jobs/run",
+            "description": "Requiere ARCA_WORKER_SECRET en .env. Sin JWT."
+          }
+        }
+      ]
+    },
+    {
+      "name": "Presupuestos",
+      "item": [
+        {
+          "name": "Listar presupuestos",
+          "request": {
+            "method": "GET",
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/presupuestos?pagina=1&por_pagina=25&sucursal_id={{sucursalId}}",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "v1", "presupuestos"],
+              "query": [
+                { "key": "pagina", "value": "1" },
+                { "key": "por_pagina", "value": "25" },
+                { "key": "sucursal_id", "value": "{{sucursalId}}" }
+              ]
+            },
+            "description": "Paridad GET /api/presupuestos. Requiere m├│dulo presupuestos."
+          }
+        },
+        {
+          "name": "Detalle presupuesto",
+          "request": {
+            "method": "GET",
+            "url": "{{baseUrl}}/api/v1/presupuestos/{{presupuestoId}}",
+            "description": "Paridad GET /api/presupuestos/[id]"
+          }
+        },
+        {
+          "name": "Convertir a pedido",
+          "request": {
+            "method": "POST",
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/presupuestos/{{presupuestoId}}/convertir-a-pedido?sucursal_id={{sucursalId}}",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "v1", "presupuestos", "{{presupuestoId}}", "convertir-a-pedido"],
+              "query": [{ "key": "sucursal_id", "value": "{{sucursalId}}" }]
+            },
+            "description": "Requiere m├│dulos presupuestos + pedidos."
+          }
+        },
+        {
+          "name": "Convertir a factura",
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"sucursal_id\": \"{{sucursalId}}\"\n}"
+            },
+            "url": "{{baseUrl}}/api/v1/presupuestos/{{presupuestoId}}/convertir-a-factura",
+            "description": "Requiere presupuestos + facturador_simple."
+          }
+        },
+        {
+          "name": "Convertir a ticket",
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"sucursal_id\": \"{{sucursalId}}\",\n  \"metodo_pago\": \"efectivo\"\n}"
+            },
+            "url": "{{baseUrl}}/api/v1/presupuestos/{{presupuestoId}}/convertir-a-ticket",
+            "description": "Requiere presupuestos + facturador_pos."
+          }
+        }
+      ]
+    },
+    {
+      "name": "Cobranza",
+      "item": [
+        {
+          "name": "Listar abiertas",
+          "request": {
+            "method": "GET",
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/cobranza?cliente_id=",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "v1", "cobranza"],
+              "query": [{ "key": "cliente_id", "value": "", "description": "Opcional ÔÇö filtrar por cliente" }]
+            },
+            "description": "Paridad GET /api/cobranza. Requiere facturador_simple."
+          }
+        },
+        {
+          "name": "Pendientes (campa├▒a)",
+          "request": {
+            "method": "GET",
+            "url": "{{baseUrl}}/api/v1/cobranza/pendientes",
+            "description": "Paridad GET /api/cobranza/pendientes ÔÇö condiciones CC, legacy, WhatsApp."
+          }
+        },
+        {
+          "name": "Registrar pago",
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"monto\": 1000,\n  \"tipo_pago\": \"efectivo\",\n  \"notas\": \"Cobro parcial demo\",\n  \"emitir_recibo\": true\n}"
+            },
+            "url": "{{baseUrl}}/api/v1/cobranza/{{cobranzaId}}/pago",
+            "description": "RPC registrar_pago_cobranza + recibo PDF opcional."
+          }
+        },
+        {
+          "name": "Snooze recordatorio",
+          "request": {
+            "method": "POST",
+            "url": "{{baseUrl}}/api/v1/cobranza/{{cobranzaId}}/snooze"
+          }
+        },
+        {
+          "name": "Quitar snooze",
+          "request": {
+            "method": "DELETE",
+            "url": "{{baseUrl}}/api/v1/cobranza/{{cobranzaId}}/snooze"
+          }
+        }
+      ]
+    }
+  ]
+}
