@@ -27,6 +27,8 @@
 
 ## SmartStock backend bootstrap
 
+Despliegue objetivo: **PostgreSQL** (instancia gestionada o VM) + **Nest** como API, con **Next** como frontend aparte. El backend habla solo SQL/TLS con Postgres y valida JWT con **`JWT_SECRET`** (HS256; alias legacy `SUPABASE_JWT_SECRET`) alineado con el emisor de tokens del login; no asume un proveedor concreto de base de datos ni de hosting.
+
 ### 1) Configurar entorno
 
 ```bash
@@ -41,6 +43,17 @@ npm run build
 
 ### 3) Flujo de migraciones (estándar equipo)
 
+Primera vez en **Postgres vacío** (mudanza Nest + Postgres, sin esquema Supabase previo):
+
+```bash
+npm run build
+npm run migration:run
+```
+
+La migración `1742000000000-nb-baseline-core-schema` crea tablas núcleo; las siguientes agregan barcodes, idempotencia y grants del worker ARCA. Detalle: `docs/migracion-nest-postgres.md`.
+
+Cambios incrementales posteriores:
+
 ```bash
 npm run migration:generate
 npm run build
@@ -48,6 +61,18 @@ npm run migration:run
 ```
 
 > `migration:generate` crea por defecto `src/database/migrations/auto-migration.ts`.
+
+### CI (GitHub Actions)
+
+Workflow `.github/workflows/backend-ci.yml` en la ra├¡z del monorepo:
+
+1. Postgres 16 (service container)
+2. `npm run build -w @smartstock/backend`
+3. `npm run migration:run -w @smartstock/backend`
+4. `npm run test -w @smartstock/backend` (209+ tests unitarios)
+5. `npm run test:e2e -w @smartstock/backend` (smoke `GET /api/v1/health`)
+
+Se dispara en push/PR que toquen `apps/backend/**` o el propio workflow.
 
 ## Project setup
 
@@ -68,13 +93,32 @@ $ npm run start:dev
 $ npm run start:prod
 ```
 
+### Probar en local
+
+1. `npm run build` (debe generar `dist/main.js`; si fallara sin errores, borr├í `tsconfig.tsbuildinfo` si existe y recompil├í).
+2. `npm run start:dev` ÔÇö API en `http://localhost:4000` (o el `PORT` del `.env`).
+3. **Health** (sin token): `GET http://localhost:4000/api/v1/health`
+4. **Swagger** (no producci├│n): `http://localhost:4000/api/docs` ÔÇö prob├í endpoints con **Authorize** y un JWT HS256 que incluya `tenant_id` y rol seg├║n tus guards.
+
+### CORS (Next u otro front)
+
+Por defecto se permite `http://localhost:3000`. Para m├ís or├¡genes o producci├│n:
+
+```env
+NEST_CORS_ORIGINS=https://app.tudominio.com,http://localhost:3000
+```
+
+Sin variable en `.env`, el default es `http://localhost:3000`. Si defin├¡s `NEST_CORS_ORIGINS` como cadena vac├¡a, no se llama a `enableCors` (├║til si solo hay llamadas servidor-a-servidor).
+
 ## Run tests
 
 ```bash
 # unit tests
 $ npm run test
 
-# e2e tests
+# e2e (requiere Postgres accesible con las variables DB_* del entorno; ver test/jest-e2e-setup.js)
+# Antes: compilar para que TypeORM cargue entidades desde dist/
+$ npm run build
 $ npm run test:e2e
 
 # test coverage

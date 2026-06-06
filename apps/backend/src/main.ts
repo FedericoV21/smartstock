@@ -1,11 +1,14 @@
 import { NestFactory } from '@nestjs/core';
+import { ConfigService } from '@nestjs/config';
+
+import { configureApp } from './bootstrap/configure-app';
 import { AppModule } from './app.module';
 
 async function bootstrap() {
   const app = await NestFactory.create(AppModule);
-  app.setGlobalPrefix('api/v1');
-
-  const port = Number.parseInt(process.env.PORT ?? '4000', 10);
-  await app.listen(Number.isNaN(port) ? 4000 : port);
+  const config = app.get(ConfigService);
+  configureApp(app, config);
+  const port = config.get<number>('PORT', 4000);
+  await app.listen(port);
 }
 bootstrap();
