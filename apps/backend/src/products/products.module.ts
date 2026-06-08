@@ -3,13 +3,17 @@ import { TypeOrmModule } from '@nestjs/typeorm';
 
 import { AuthModule } from '../auth/auth.module';
 import { Tenant } from '../config/entities/tenant.entity';
+import { ModuloConfig } from '../config/entities/modulo-config.entity';
 import { BranchesModule } from '../branches/branches.module';
+import { ProductoPromocion } from '../promotions/entities/producto-promocion.entity';
+import { PluSucursal } from '../branches/entities/plu-sucursal.entity';
 import { StockSucursal } from '../branches/entities/stock-sucursal.entity';
 import { Sucursal } from '../branches/entities/sucursal.entity';
 import { Categoria } from '../catalog/entities/categoria.entity';
 import { Proveedor } from '../catalog/entities/proveedor.entity';
 import { UsersModule } from '../users/users.module';
 import { ProductoBarcode } from './entities/producto-barcode.entity';
+import { ProductoGananciaTramo } from './entities/producto-ganancia-tramo.entity';
 import { ProductoVarianteStockSucursal } from './entities/producto-variante-stock-sucursal.entity';
 import { ProductoLoteIngreso } from './entities/producto-lote-ingreso.entity';
 import { ProductoVariante } from './entities/producto-variante.entity';
@@ -23,6 +27,8 @@ import { ProductLotesService } from './product-lotes.service';
 import { ProductImageS3StorageService } from './storage/product-image-s3.storage';
 import { ProductVariantsController } from './product-variants.controller';
 import { ProductVariantsService } from './product-variants.service';
+import { ProductsExtendedController } from './products-extended.controller';
+import { ProductsExtendedService } from './products-extended.service';
 import { ProductsController } from './products.controller';
 import { ProductsService } from './products.service';
 import { QendraExportController } from './qendra-export.controller';
@@ -36,17 +42,22 @@ import { QendraExportService } from './qendra-export.service';
       ProductoBarcode,
       ProductoVariante,
       ProductoVarianteStockSucursal,
+      ProductoGananciaTramo,
+      ProductoPromocion,
+      PluSucursal,
       StockSucursal,
       Sucursal,
       Categoria,
       Proveedor,
       Tenant,
+      ModuloConfig,
     ]),
     AuthModule,
     BranchesModule,
     UsersModule,
   ],
   controllers: [
+    ProductsExtendedController,
     ProductsController,
     ProductImageController,
     ProductMergeController,
@@ -55,6 +66,7 @@ import { QendraExportService } from './qendra-export.service';
     QendraExportController,
   ],
   providers: [
+    ProductsExtendedService,
     ProductsService,
     ProductImageService,
     ProductImageS3StorageService,

@@ -22,6 +22,8 @@ export const envValidationSchema = Joi.object({
   THROTTLE_LIMIT: Joi.number().integer().positive().default(120),
   /** Secreto para `POST /api/v1/internal/arca-jobs/run` (cron / worker). */
   ARCA_WORKER_SECRET: Joi.string().allow('').default(''),
+  /** Bearer para `GET /api/v1/cron/reintentar-arca` y `POST /api/v1/cron/arca-procesar`. */
+  CRON_SECRET: Joi.string().allow('').default(''),
   ARCA_WORKER_BATCH_SIZE: Joi.number().integer().min(1).max(50).default(5),
   /** Solo con `arca_config.ambiente = homologacion`: asigna CAE ficticio sin llamar AFIP. */
   ARCA_WORKER_STUB: Joi.boolean().truthy('true', '1').falsy('false', '0').default(false),
@@ -60,6 +62,9 @@ export const envValidationSchema = Joi.object({
   PUBLIC_APP_BASE_URL: Joi.string().allow('').default(''),
   /** Or├¡genes CORS permitidos (Next u otros), separados por coma. Vac├¡o = sin CORS expl├¡cito. */
   NEST_CORS_ORIGINS: Joi.string().allow('').default('http://localhost:3000'),
+  /** Panel interno GinkGo (POST /api/v1/nexus-dashboard/login). */
+  NEXUS_DASHBOARD_PASSWORD: Joi.string().allow('').optional(),
+  NEXUS_DASHBOARD_SECRET: Joi.string().allow('').optional(),
 })
   .custom((value, helpers) => {
     const jwt =

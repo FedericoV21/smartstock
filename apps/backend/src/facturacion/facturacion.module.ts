@@ -2,6 +2,7 @@ import { forwardRef, Module } from '@nestjs/common';
 import { TypeOrmModule } from '@nestjs/typeorm';
 
 import { ArcaModule } from '../arca/arca.module';
+import { ArcaJob } from '../arca/entities/arca-job.entity';
 import { ArcaConfig } from '../arca/entities/arca-config.entity';
 import { AuthModule } from '../auth/auth.module';
 import { BranchesModule } from '../branches/branches.module';
@@ -19,6 +20,7 @@ import { MedioPagoOpcion } from '../payment-methods/entities/medio-pago-opcion.e
 import { MedioPagoRapido } from '../payment-methods/entities/medio-pago-rapido.entity';
 import { ArcaTrayService } from './arca-tray.service';
 import { CompraProveedorManualService } from './compra-proveedor-manual.service';
+import { ComprobanteEncolarArcaService } from './comprobante-encolar-arca.service';
 import { ComprobanteRetryArcaService } from './comprobante-retry-arca.service';
 import { ComprobanteVoidService } from './comprobante-void.service';
 import { ComprobanteItem } from './entities/comprobante-item.entity';
@@ -41,6 +43,7 @@ import { PdfS3StorageService } from './storage/pdf-s3.storage';
       Cliente,
       Proveedor,
       ArcaConfig,
+      ArcaJob,
       Tenant,
       Movimiento,
       StockSucursal,
@@ -62,6 +65,7 @@ import { PdfS3StorageService } from './storage/pdf-s3.storage';
     CompraProveedorManualService,
     ArcaTrayService,
     ComprobanteRetryArcaService,
+    ComprobanteEncolarArcaService,
     ComprobanteVoidService,
     ComprobantePdfService,
     PdfS3StorageService,
@@ -72,6 +76,8 @@ import { PdfS3StorageService } from './storage/pdf-s3.storage';
     ComprobantePdfService,
     ComprobantePdfRegenerationService,
     FacturacionService,
+    ComprobanteRetryArcaService,
+    CompraProveedorManualService,
   ],
 })
 export class FacturacionModule {}

@@ -34,10 +34,42 @@ Content-Type: application/json
 { "sucursalId": "d0000001-0001-4001-8001-000000000001" }
 ```
 
-### Certificado AFIP
+### Certificados AFIP (por cliente / sucursal)
 
-- Certificado digital del CUIT de prueba, asociado al **punto de venta** habilitado en homologaci├│n.
-- Archivos PEM: certificado + clave privada (nunca commitear).
+Los certificados **no** van en variables de entorno del servidor. Cada tenant los carga por sucursal en `arca_config`, cifrados con `ARCA_ENCRYPTION_KEY` del backend (mismo modelo que documenta el frontend en `apps/frontend/docs/arca.md`):
+
+| Campo API | Tabla `arca_config` | Notas |
+|-----------|---------------------|-------|
+| `certificadoPem` | `certificado_pem` | PEM del certificado AFIP |
+| `clavePrivadaPem` | `clave_privada_pem` | Clave privada |
+| `cuitEmisor` | `cuit_emisor` | 11 dígitos |
+| `puntoDeVenta` | `punto_de_venta` | PV habilitado en homo |
+| `ambiente` | `ambiente` | `homologacion` o `produccion` |
+| `sucursalId` | `sucursal_id` | Una fila por tenant+sucursal |
+
+**Flujo productivo:** admin sube `.pem` + `.key` desde `/configuracion/arca` → `PUT /api/v1/arca/config`. El worker y WSAA leen siempre desde BD (`ArcaService.findConfigOrThrow` + descifrado).
+
+**Atajo solo para CI/manual:** `ARCA_HOMO_CERT_PATH` + `ARCA_HOMO_KEY_PATH` en el runner o e2e suben esos archivos vía `PUT /arca/config` cuando la sucursal aún no tiene certificados. Si ya están cargados, el runner los omite.
+
+```http
+PUT /api/v1/arca/config
+Authorization: Bearer {{accessToken}}
+X-Sucursal-Id: d0000001-0001-4001-8001-000000000001
+Content-Type: application/json
+
+{
+  "sucursalId": "d0000001-0001-4001-8001-000000000001",
+  "cuitEmisor": "20123456789",
+  "puntoDeVenta": 3,
+  "ambiente": "homologacion",
+  "certificadoPem": "-----BEGIN CERTIFICATE-----\n...",
+  "clavePrivadaPem": "-----BEGIN PRIVATE KEY-----\n..."
+}
+```
+
+Para actualizar solo CUIT/PV sin reenviar PEM: `certificadoPem: "__KEEP_EXISTING__"`.
+
+Consultar estado (sin exponer PEM): `GET /api/v1/arca/config` → `hasCertificado`, `hasClavePrivada`.
 
 ### JWT de prueba
 
@@ -55,9 +87,9 @@ Respuesta esperada: `listo_para_homologacion: true` y `bloqueantes: 0`.
 
 Si hay bloqueantes, resolver en orden:
 
-1. Variables de entorno (`ARCA_ENCRYPTION_KEY`, `JWT_SECRET`)
+1. Variables de entorno del **servidor** (`ARCA_ENCRYPTION_KEY`, `JWT_SECRET`) — no son certificados AFIP
 2. `POST /api/v1/branches/active` con sucursal demo
-3. `PUT /api/v1/arca/config` con `sucursalId`, CUIT, PV, certificados
+3. `PUT /api/v1/arca/config` con certificados del **cliente** para esa sucursal (o UI `/configuracion/arca`)
 4. Comprobante en `pendiente_arca` (seed: `c0000001-0001-4001-8001-000000000003`, `numero = null`) **o** emitir uno nuevo (flujo A)
 
 ## 3. Flujo manual Postman
@@ -125,9 +157,10 @@ O ejecutar las consultas del script en tu cliente SQL.
 
 ## 6. Archivar evidencia
 
-1. Copiar `docs/homologacion-evidencia/TEMPLATE.md` ÔåÆ `evidencia-YYYY-MM-DD.md` (en la misma carpeta).
-2. Completar casos 1ÔÇô5 **sin** pegar certificados ni CAE completos (anonimizar).
-3. No commitear evidencia con datos sensibles (ver `.gitignore`).
+1. `GET /api/v1/arca/homologation-evidence` — snapshot JSON anonimizado (CAE últimos 4 dígitos, sin certificados).
+2. Copiar `docs/homologacion-evidencia/TEMPLATE.md` → `evidencia-YYYY-MM-DD.md` (en la misma carpeta).
+3. Completar casos 1–5 **sin** pegar certificados ni CAE completos (anonimizar).
+4. No commitear evidencia con datos sensibles (ver `.gitignore`).
 
 ## 7. Stub de homologaci├│n (solo dev/CI)
 
@@ -138,7 +171,10 @@ Con `ARCA_WORKER_STUB=true` y `arca_config.ambiente = homologacion`, el worker a
 
 ## 8. Automatizaci├│n existente
 
-- **CI:** `.github/workflows/backend-ci.yml` ÔÇö build, migraciones, tests, smoke health (sin AFIP).
+- **CI:** `.github/workflows/backend-ci.yml` ÔÇö build, migraciones, seed demo, tests unitarios + e2e (readiness NB-ARC-106, sin AFIP).
+- **E2E readiness:** `npm run test:e2e:arca -w @smartstock/backend` ÔÇö checklist, logs y comprobante demo.
+- **E2E AFIP real:** `ARCA_HOMO_E2E=1` (+ opcional `ARCA_HOMO_CERT_PATH` / `ARCA_HOMO_KEY_PATH` si la sucursal demo aún no tiene certificados en BD) `npm run test:e2e:arca -w @smartstock/backend`
+- **Runner manual (API en marcha):** `npm run homologacion:run -w @smartstock/backend` — usa certificados ya en `arca_config` o los sube con `ARCA_HOMO_*` como atajo; ver `.env.example`.
 - **Unit tests:** `arca-wsfe*.spec.ts`, `arca-wsaa.service.spec.ts` ÔÇö parsing XML mockeado.
 
 ## 9. Cierre del ticket

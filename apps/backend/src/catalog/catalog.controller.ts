@@ -13,6 +13,8 @@ import { ApiBearerAuth, ApiOperation, ApiTags } from '@nestjs/swagger';
 
 import { Roles } from '../auth/decorators/roles.decorator';
 import { CatalogService } from './catalog.service';
+import { ClienteComprobantesService } from './cliente-comprobantes.service';
+import { ProveedorFacturasImportadasService } from './proveedor-facturas-importadas.service';
 import { CreateCategoriaDto } from './dto/create-categoria.dto';
 import { CreateClienteDto } from './dto/create-cliente.dto';
 import { CreateProveedorDto } from './dto/create-proveedor.dto';
@@ -20,12 +22,17 @@ import { ListCatalogQueryDto } from './dto/list-catalog-query.dto';
 import { UpdateCategoriaDto } from './dto/update-categoria.dto';
 import { UpdateClienteDto } from './dto/update-cliente.dto';
 import { UpdateProveedorDto } from './dto/update-proveedor.dto';
+import { FacturasImportadasQueryDto } from './dto/facturas-importadas-query.dto';
 
 @ApiTags('catalog')
 @ApiBearerAuth('access-token')
 @Controller()
 export class CatalogController {
-  constructor(private readonly catalogService: CatalogService) {}
+  constructor(
+    private readonly catalogService: CatalogService,
+    private readonly clienteComprobantesService: ClienteComprobantesService,
+    private readonly proveedorFacturasImportadasService: ProveedorFacturasImportadasService,
+  ) {}
 
   @Get('categories')
   @Roles('admin', 'operador', 'visor')
@@ -78,6 +85,19 @@ export class CatalogController {
     return this.catalogService.getProveedor(id);
   }
 
+  @Get('suppliers/:id/facturas-importadas')
+  @Roles('admin', 'operador', 'visor')
+  @ApiOperation({
+    summary: 'Bandeja de facturas importadas del proveedor',
+    description: 'Paridad GET /api/proveedores/:id/facturas-importadas.',
+  })
+  listSupplierFacturasImportadas(
+    @Param('id', ParseUUIDPipe) id: string,
+    @Query() query: FacturasImportadasQueryDto,
+  ) {
+    return this.proveedorFacturasImportadasService.listFacturasImportadas(id, query);
+  }
+
   @Patch('suppliers/:id')
   @Roles('admin', 'operador')
   updateSupplier(@Param('id', ParseUUIDPipe) id: string, @Body() dto: UpdateProveedorDto) {
@@ -108,6 +128,16 @@ export class CatalogController {
   @Roles('admin', 'operador', 'visor')
   getCustomer(@Param('id', ParseUUIDPipe) id: string) {
     return this.catalogService.getCliente(id);
+  }
+
+  @Get('customers/:id/comprobantes')
+  @Roles('admin', 'operador', 'visor')
+  @ApiOperation({
+    summary: 'Historial de comprobantes del cliente',
+    description: 'Paridad GET /api/clientes/:id/comprobantes.',
+  })
+  listCustomerComprobantes(@Param('id', ParseUUIDPipe) id: string) {
+    return this.clienteComprobantesService.listComprobantes(id);
   }
 
   @Patch('customers/:id')

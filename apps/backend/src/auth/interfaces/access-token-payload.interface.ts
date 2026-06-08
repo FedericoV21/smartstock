@@ -16,6 +16,9 @@ export interface AccessTokenPayload {
   rol?: string;
   /** Tenant activo del usuario (inyectado en el JWT por el hook/BFF de auth) */
   tenant_id?: string;
+  /** Tenant casa del usuario (staff super-admin) */
+  tenant_home_id?: string;
+  es_super_admin?: boolean;
   /** Sucursal por defecto del usuario (cuando exista perfil `usuario` en Nest) */
   sucursal_default_id?: string;
   sucursalDefaultId?: string;

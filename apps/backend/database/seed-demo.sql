@@ -8,6 +8,7 @@ DO $seed$
 DECLARE
   demo_tenant uuid := '00000000-0000-4000-8000-000000000001'::uuid;
   demo_user   uuid := '33333333-3333-4333-8333-333333333333'::uuid;
+  demo_local  uuid := '55555555-5555-4555-8555-555555555555'::uuid;
 BEGIN
   DELETE FROM public.arca_job j
     USING public.comprobante c
@@ -27,31 +28,53 @@ BEGIN
   DELETE FROM public.comprobante WHERE tenant_id = demo_tenant;
   DELETE FROM public.importacion_log WHERE tenant_id = demo_tenant;
   DELETE FROM public.idempotency_request WHERE tenant_id = demo_tenant;
-  DELETE FROM public.usuario_sucursal us
-    USING public.usuario u
-   WHERE us.usuario_id = u.id AND u.tenant_id = demo_tenant;
-  DELETE FROM public.usuario WHERE tenant_id = demo_tenant;
-  DELETE FROM public.stock_sucursal WHERE tenant_id = demo_tenant;
-  DELETE FROM public.producto_variante_stock_sucursal WHERE tenant_id = demo_tenant;
-  DELETE FROM public.producto_variante WHERE tenant_id = demo_tenant;
-  DELETE FROM public.producto WHERE tenant_id = demo_tenant;
-  DELETE FROM public.sucursal WHERE tenant_id = demo_tenant;
-  DELETE FROM public.cliente WHERE tenant_id = demo_tenant;
-  DELETE FROM public.proveedor WHERE tenant_id = demo_tenant;
-  DELETE FROM public.categoria WHERE tenant_id = demo_tenant;
-  DELETE FROM public.medio_pago_rapido WHERE tenant_id = demo_tenant;
-  DELETE FROM public.medio_pago WHERE tenant_id = demo_tenant;
+  DELETE FROM public.pasarela_transaccion WHERE tenant_id = demo_tenant;
+  DELETE FROM public.pasarela_webhook_log WHERE tenant_id = demo_tenant;
+  DELETE FROM public.pasarela_caja WHERE tenant_id = demo_tenant;
+  DELETE FROM public.pasarela_integracion WHERE tenant_id = demo_tenant;
+  DELETE FROM public.mp_qr_webhook_log WHERE tenant_id = demo_tenant;
+  DELETE FROM public.mp_transferencia_movimiento WHERE tenant_id = demo_tenant;
+  DELETE FROM public.mp_transferencia_reporte WHERE tenant_id = demo_tenant;
+  DELETE FROM public.mp_qr_config WHERE tenant_id = demo_tenant;
+  DELETE FROM public.mp_point_config WHERE tenant_id = demo_tenant;
   DELETE FROM public.caja_turno WHERE tenant_id = demo_tenant;
   DELETE FROM public.cierre_z_medio_pago WHERE tenant_id = demo_tenant;
   DELETE FROM public.cierre_z WHERE tenant_id = demo_tenant;
   DELETE FROM public.caja_apertura WHERE tenant_id = demo_tenant;
   DELETE FROM public.caja_usuario WHERE tenant_id = demo_tenant;
   DELETE FROM public.caja WHERE tenant_id = demo_tenant;
-  DELETE FROM public.modulo_config WHERE tenant_id = demo_tenant;
+  DELETE FROM public.stock_transferencia_sucursal WHERE tenant_id = demo_tenant;
+  DELETE FROM public.usuario_sucursal us
+    USING public.usuario u
+   WHERE us.usuario_id = u.id AND u.tenant_id = demo_tenant;
+  DELETE FROM public.usuario_credencial_local WHERE tenant_id = demo_tenant;
+  DELETE FROM public.usuario_rol ur
+    USING public.usuario u
+   WHERE ur.usuario_id = u.id AND u.tenant_id = demo_tenant;
+  DELETE FROM public.usuario_permiso up
+    USING public.usuario u
+   WHERE up.usuario_id = u.id AND u.tenant_id = demo_tenant;
+  DELETE FROM public.usuario_pedido_workflow_estado WHERE tenant_id = demo_tenant;
+  DELETE FROM public.usuario WHERE tenant_id = demo_tenant;
+  DELETE FROM public.stock_sucursal WHERE tenant_id = demo_tenant;
+  DELETE FROM public.producto_variante_stock_sucursal WHERE tenant_id = demo_tenant;
+  DELETE FROM public.producto_variante WHERE tenant_id = demo_tenant;
+  DELETE FROM public.producto WHERE tenant_id = demo_tenant;
   DELETE FROM public.arca_config WHERE tenant_id = demo_tenant;
+  DELETE FROM public.sucursal WHERE tenant_id = demo_tenant;
+  DELETE FROM public.pago_proveedor_movimiento WHERE tenant_id = demo_tenant;
+  DELETE FROM public.pago_proveedor_factura WHERE tenant_id = demo_tenant;
+  DELETE FROM public.pago WHERE tenant_id = demo_tenant;
+  DELETE FROM public.cuenta_corriente WHERE tenant_id = demo_tenant;
+  DELETE FROM public.cliente WHERE tenant_id = demo_tenant;
+  DELETE FROM public.proveedor WHERE tenant_id = demo_tenant;
+  DELETE FROM public.categoria WHERE tenant_id = demo_tenant;
+  DELETE FROM public.medio_pago_rapido WHERE tenant_id = demo_tenant;
+  DELETE FROM public.medio_pago WHERE tenant_id = demo_tenant;
+  DELETE FROM public.modulo_config WHERE tenant_id = demo_tenant;
   DELETE FROM public.tenant WHERE id = demo_tenant;
 
-  INSERT INTO public.tenant (id, nombre, razon_social, cuit, activo, domicilio, telefono, email, condicion_iva, plan)
+  INSERT INTO public.tenant (id, nombre, razon_social, cuit, activo, domicilio, telefono, email, condicion_iva, plan, codigo_acceso)
   VALUES (
     demo_tenant,
     'Demo Kiosco',
@@ -62,15 +85,27 @@ BEGIN
     '011-5555-0100',
     'demo@kiosco.test',
     'monotributista',
-    'base'
+    'base',
+    'demo'
   );
 
   INSERT INTO public.modulo_config (
     tenant_id, stock, importador_excel, facturador_simple, facturador_arca, facturador_pos,
-    pedidos, presupuestos, ia_precios, analizador_rentabilidad
+    pedidos, presupuestos, ia_precios, turnos, analizador_rentabilidad, lector_facturas,
+    despiece_carniceria
   ) VALUES (
-    demo_tenant, true, true, true, true, true, true, false, true, false
+    demo_tenant, true, true, true, true, true, true, false, true, true, false, true, true
   );
+
+  UPDATE public.tenant
+  SET business_prefs = COALESCE(business_prefs, '{}'::jsonb) || '{"despieceCarniceriaHabilitado": true}'::jsonb
+  WHERE id = demo_tenant;
+
+  INSERT INTO public.rol (tenant_id, slug, nombre, descripcion, es_base, activo)
+  VALUES
+    (demo_tenant, 'admin', 'Administrador', 'Acceso total al negocio', true, true),
+    (demo_tenant, 'operador', 'Operador', 'Operación diaria', true, true),
+    (demo_tenant, 'visor', 'Visor', 'Solo lectura', true, true);
 
   INSERT INTO public.medio_pago (id, tenant_id, nombre, activo, orden)
   VALUES ('90000001-0001-4001-8001-000000000001', demo_tenant, 'Tarjeta cr├®dito', true, 0);
@@ -97,21 +132,6 @@ BEGIN
     true
   );
 
-  INSERT INTO public.caja (
-    id, tenant_id, sucursal_id, numero, nombre, usuario_default_id, activa
-  ) VALUES (
-    'c0000001-0001-4001-8001-000000000001',
-    demo_tenant,
-    'd0000001-0001-4001-8001-000000000001',
-    1,
-    'Caja 01',
-    demo_user,
-    true
-  );
-
-  INSERT INTO public.caja_usuario (tenant_id, caja_id, usuario_id)
-  VALUES (demo_tenant, 'c0000001-0001-4001-8001-000000000001', demo_user);
-
   INSERT INTO public.usuario (
     id, tenant_id, nombre, apellido, email, rol, activo, es_super_admin, sucursal_default_id
   ) VALUES (
@@ -129,12 +149,86 @@ BEGIN
   INSERT INTO public.usuario_sucursal (usuario_id, sucursal_id)
   VALUES (demo_user, 'd0000001-0001-4001-8001-000000000001');
 
+  INSERT INTO public.usuario_rol (usuario_id, rol_id)
+  SELECT demo_user, r.id
+    FROM public.rol r
+   WHERE r.tenant_id = demo_tenant AND r.slug = 'admin';
+
+  INSERT INTO public.usuario (
+    id, tenant_id, nombre, apellido, email, rol, activo, es_super_admin, sucursal_default_id
+  ) VALUES (
+    demo_local,
+    demo_tenant,
+    'Cajero',
+    'Demo',
+    'l7abce93aa66af36de2022c94224a840a@example.invalid',
+    'operador',
+    true,
+    false,
+    'd0000001-0001-4001-8001-000000000001'
+  );
+
+  INSERT INTO public.usuario_sucursal (usuario_id, sucursal_id)
+  VALUES (demo_local, 'd0000001-0001-4001-8001-000000000001');
+
+  INSERT INTO public.usuario_credencial_local (
+    usuario_id, tenant_id, username_local, pin_hash, pin_temporal, activo, intentos_fallidos
+  ) VALUES (
+    demo_local,
+    demo_tenant,
+    'cajero',
+    's1$demo_seed_salt_001$2c0256918519ca3d93253c45945e774181669d7bf67e4f39717dd67e9bfaaedb80ab4ba5fc91d41550b704a87830d57617c991541fbb2a92d154d971187f6e34',
+    false,
+    true,
+    0
+  );
+
+  INSERT INTO public.usuario_rol (usuario_id, rol_id)
+  SELECT demo_local, r.id
+    FROM public.rol r
+   WHERE r.tenant_id = demo_tenant AND r.slug = 'operador';
+
+  INSERT INTO public.caja (
+    id, tenant_id, sucursal_id, numero, nombre, usuario_default_id, activa
+  ) VALUES (
+    'c0000001-0001-4001-8001-000000000001',
+    demo_tenant,
+    'd0000001-0001-4001-8001-000000000001',
+    1,
+    'Caja 01',
+    demo_user,
+    true
+  );
+
+  INSERT INTO public.caja_usuario (tenant_id, caja_id, usuario_id)
+  VALUES (demo_tenant, 'c0000001-0001-4001-8001-000000000001', demo_user);
+
   INSERT INTO public.categoria (id, tenant_id, nombre, descripcion, activa) VALUES
     ('e0000001-0001-4001-8001-000000000001', demo_tenant, 'Almac├®n', 'Despensa', true),
     ('e0000001-0001-4001-8001-000000000002', demo_tenant, 'Bebidas', NULL, true);
 
   INSERT INTO public.proveedor (id, tenant_id, nombre, cuit, telefono, email, activo) VALUES
     ('f0000001-0001-4001-8001-000000000001', demo_tenant, 'Distribuidora Norte', '30711112223', '011-4444-9000', 'ventas@distnorte.test', true);
+
+  INSERT INTO public.cuenta_corriente (tenant_id, cliente_id, proveedor_id, saldo, tipo_cuenta)
+  VALUES (demo_tenant, NULL, 'f0000001-0001-4001-8001-000000000001', 5000.00, 'proveedor');
+
+  INSERT INTO public.pago_proveedor_factura (
+    id, tenant_id, comprobante_id, proveedor_id, monto_original, saldo_pendiente,
+    vencimiento_at, condicion_pago, estado, origen, referencia
+  ) VALUES (
+    '0f000001-0001-4001-8001-000000000001',
+    demo_tenant,
+    NULL,
+    'f0000001-0001-4001-8001-000000000001',
+    5000.00,
+    5000.00,
+    now() + interval '30 days',
+    'dias',
+    'pendiente',
+    'import_lista',
+    'Factura demo importada'
+  );
 
   INSERT INTO public.cliente (id, tenant_id, nombre, cuit_dni, condicion_iva, activo) VALUES
     ('a0000001-0001-4001-8001-000000000001', demo_tenant, 'Consumidor final mostrador', NULL, 'consumidor_final', true);
@@ -318,6 +412,9 @@ BEGIN
     ('d0000001-0001-4001-8001-000000000003', 'b0000001-0001-4001-8001-000000000001', 2.000, 4200.00, 8400.00),
     ('d0000001-0001-4001-8001-000000000003', 'b0000001-0001-4001-8001-000000000002', 4.000, 890.00, 3560.00),
     ('d0000001-0001-4001-8001-000000000004', 'b0000001-0001-4001-8001-000000000003', 1.000, 650.00, 650.00);
+
+  UPDATE public.pedido SET numero_orden = 2
+  WHERE id = 'd0000001-0001-4001-8001-000000000003';
 
   INSERT INTO public.movimiento (tenant_id, producto_id, tipo, cantidad, stock_anterior, stock_posterior, motivo, referencia_tipo, referencia_id, usuario_id)
   VALUES

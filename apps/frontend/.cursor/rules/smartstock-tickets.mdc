@@ -1,0 +1,46 @@
+---
+description: Cómo trabajar con el backlog de tickets de Nexus (docs/TICKETS.md, activeContext, documentación vinculada).
+alwaysApply: false
+---
+
+# Nexus — Guía de trabajo por tickets
+
+## Cuándo aplica esta regla
+
+Cuando el usuario pida trabajar en un ticket, implementar un ticket, avanzar con el siguiente ticket, o mencione un ID de ticket (ej. `V01-AUTH-001`).
+
+## Protocolo
+
+1. **Leer contexto:** Leer `docs/activeContext.md` para entender qué versión se está construyendo, los próximos tickets y decisiones pendientes.
+
+2. **Identificar el ticket:** Buscar el ticket en `docs/TICKETS.md`. Si el usuario no especificó cuál, tomar el primero que **no** tenga `(hecho)` en el título. Anunciar al inicio: `Trabajando en: [ID] — [Título]`.
+
+3. **Leer la documentación:** Cada ticket tiene un campo **Notas técnicas** que referencia un archivo de `docs/` con el código, diagramas y flujos necesarios. Leer ese archivo **antes** de escribir código. Referencia rápida de docs:
+
+   - `docs/arquitectura.md` — Estructura del proyecto, carpetas
+   - `docs/base-de-datos.md` — Tablas, SQL, migraciones
+   - `docs/multi-tenancy.md` — RLS, JWT, policies
+   - `docs/autenticacion.md` — Login, register, middleware, roles
+   - `docs/modulos.md` — Feature flags, guards
+   - `docs/stock.md` — Productos, movimientos, alertas
+   - `docs/importador.md` — Excel/CSV, mapeo, validación
+   - `docs/facturacion.md` — Comprobantes, PDF, numeración
+   - `docs/pedidos.md` — Pedidos, presupuestos, estados
+   - `docs/ia-precios.md` — Gemini, historial de precios
+   - `docs/arca.md` — WSAA, WSFE, certificados
+   - `docs/deploy.md` — Variables de entorno, Vercel, Docker
+
+4. **Implementar:** Cumplir **todos** los criterios de aceptación (checkboxes del ticket). Usar el código y las estructuras de la documentación; no inventar alternativas. Verificar que las **dependencias** del ticket estén marcadas como `(hecho)`.
+
+5. **Marcar como hecho:** Al terminar, en `docs/TICKETS.md`:
+
+   - Agregar `(hecho)` al título del ticket
+   - Cambiar `Estado: todo` a `Estado: done`
+   - Si era el último de los 3 tickets listados en `activeContext.md`, actualizar ese archivo con los próximos 3
+
+## Reglas
+
+- Un ticket por vez, en orden, sin saltear
+- Si hay un bloqueo o algo no tiene sentido, preguntar antes de asumir
+- Si el ticket requiere una decisión listada en **Decisiones pendientes** de `activeContext.md`, preguntar al usuario
+- No agrupar múltiples tickets en una sola implementación

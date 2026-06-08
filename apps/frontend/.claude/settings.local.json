@@ -1,0 +1,10 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(npx tsc *)",
+      "Bash(wc -l \"C:/Users/nicoa/OneDrive/Documentos/GinkGo Devs/Proyectos/Smart Stock/smartstock/.claude/worktrees/musing-beaver-d1abf8/src/lib/facturacion/arca/xml-builder.ts\" \"C:\\\\\\\\Users\\\\\\\\nicoa\\\\\\\\OneDrive\\\\\\\\Documentos\\\\\\\\GinkGo Devs\\\\\\\\Proyectos\\\\\\\\Smart Stock\\\\\\\\smartstock\\\\\\\\.claude\\\\\\\\worktrees\\\\\\\\musing-beaver-d1abf8\\\\\\\\src\\\\\\\\lib\\\\\\\\facturacion\\\\\\\\arca\\\\\\\\xml-builder.ts\")",
+      "Bash(readlink \"C:/Users/nicoa/OneDrive/Documentos/GinkGo Devs/Proyectos/Smart Stock/smartstock/.claude/worktrees/musing-beaver-d1abf8\" 2>&1; ls -la \"C:/Users/nicoa/OneDrive/Documentos/GinkGo Devs/Proyectos/Smart Stock/smartstock/.claude/worktrees/\" 2>&1 | head -20)",
+      "Bash(tasklist)"
+    ]
+  }
+}

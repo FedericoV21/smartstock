@@ -49,6 +49,7 @@ import { MpPointWebhookService } from './mp-point-webhook.service';
     MpPointConfigService,
     MpPointPaymentService,
     MpPointWebhookService,
+    MpPointEventBroadcastService,
     LegacyFieldCryptoService,
     MpPointClientFactory,
   ],

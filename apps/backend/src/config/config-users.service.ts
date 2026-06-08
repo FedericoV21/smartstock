@@ -1,23 +1,31 @@
+import { randomUUID } from 'crypto';
+
 import {
   BadRequestException,
+  ConflictException,
   Injectable,
   NotFoundException,
-  ServiceUnavailableException,
 } from '@nestjs/common';
-import { ConfigService } from '@nestjs/config';
 import { InjectRepository } from '@nestjs/typeorm';
-import { IsNull, Repository } from 'typeorm';
+import { IsNull, In, Repository } from 'typeorm';
 
+import { generateOpaqueToken, hashOpaqueToken } from '../auth/utils/opaque-token.util';
 import { TenantContext } from '../auth/tenant-context.service';
-import { Sucursal } from '../branches/entities/sucursal.entity';
+import { UsuarioInviteToken } from '../auth/entities/usuario-invite-token.entity';
 import { Caja } from '../caja/entities/caja.entity';
 import { CajaUsuario } from '../caja/entities/caja-usuario.entity';
+import { Rol } from '../rbac/entities/rol.entity';
+import { UsuarioCredencialLocal } from '../rbac/entities/usuario-credencial-local.entity';
+import { UsuarioCredencialPassword } from '../rbac/entities/usuario-credencial-password.entity';
+import { UsuarioRol } from '../rbac/entities/usuario-rol.entity';
 import { RolUsuario } from '../users/enums/rol-usuario.enum';
 import { Usuario } from '../users/entities/usuario.entity';
+import { normalizeEmail } from '../auth/utils/local-credentials.util';
 import type { InviteUserDto } from './dto/config-users.dto';
 import type { PatchConfigUserDto } from './dto/config-users.dto';
 
 const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+const INVITE_TTL_DAYS = 7;
 
 @Injectable()
 export class ConfigUsersService {
@@ -28,8 +36,17 @@ export class ConfigUsersService {
     private readonly cajaRepo: Repository<Caja>,
     @InjectRepository(CajaUsuario)
     private readonly cajaUsuarioRepo: Repository<CajaUsuario>,
+    @InjectRepository(UsuarioCredencialLocal)
+    private readonly credencialRepo: Repository<UsuarioCredencialLocal>,
+    @InjectRepository(UsuarioCredencialPassword)
+    private readonly credencialPasswordRepo: Repository<UsuarioCredencialPassword>,
+    @InjectRepository(UsuarioInviteToken)
+    private readonly inviteTokenRepo: Repository<UsuarioInviteToken>,
+    @InjectRepository(Rol)
+    private readonly rolRepo: Repository<Rol>,
+    @InjectRepository(UsuarioRol)
+    private readonly usuarioRolRepo: Repository<UsuarioRol>,
     private readonly tenantContext: TenantContext,
-    private readonly config: ConfigService,
   ) {}
 
   async listUsers() {
@@ -40,117 +57,110 @@ export class ConfigUsersService {
     });
 
     const userIds = rows.map((u) => u.id);
-    const cajaLinked = await this.loadCajaLinkedUserIds(tenantId, userIds);
+    const [cajaLinked, credenciales] = await Promise.all([
+      this.loadCajaLinkedUserIds(tenantId, userIds),
+      userIds.length
+        ? this.credencialRepo.find({ where: { usuarioId: In(userIds) } })
+        : Promise.resolve([] as UsuarioCredencialLocal[]),
+    ]);
+    const credByUser = new Map(credenciales.map((c) => [c.usuarioId, c]));
 
     return {
-      usuarios: rows.map((u) => ({
-        id: u.id,
-        email: u.email,
-        nombre: u.nombre,
-        apellido: u.apellido,
-        rol: u.rol,
-        activo: u.activo,
-        created_at: u.createdAt.toISOString(),
-        es_local: false,
-        username_local: null,
-        tiene_caja_enlazada: cajaLinked.has(u.id),
-      })),
+      usuarios: rows.map((u) => {
+        const cred = credByUser.get(u.id);
+        return {
+          id: u.id,
+          email: u.email,
+          nombre: u.nombre,
+          apellido: u.apellido,
+          rol: u.rol,
+          activo: u.activo,
+          created_at: u.createdAt.toISOString(),
+          es_local: Boolean(cred),
+          username_local: cred?.usernameLocal ?? null,
+          tiene_caja_enlazada: cajaLinked.has(u.id),
+        };
+      }),
     };
   }
 
   async inviteUser(dto: InviteUserDto) {
     const tenantId = this.tenantContext.getTenantId();
-    const email = dto.email.trim().toLowerCase();
+    const email = normalizeEmail(dto.email);
     if (!EMAIL_RE.test(email)) {
-      throw new BadRequestException('Correo electr├│nico inv├ílido');
+      throw new BadRequestException('Correo electrónico inválido');
     }
     if (dto.rol !== RolUsuario.operador && dto.rol !== RolUsuario.visor) {
-      throw new BadRequestException('Rol inv├ílido (operador o visor)');
+      throw new BadRequestException('Rol inválido (operador o visor)');
     }
 
-    const exists = await this.usuarioRepo
+    const existsInTenant = await this.usuarioRepo
       .createQueryBuilder('u')
       .where('u.tenant_id = :tenantId', { tenantId })
       .andWhere('LOWER(u.email) = :email', { email })
       .andWhere('u.deleted_at IS NULL')
       .getOne();
-    if (exists) {
+    if (existsInTenant) {
       throw new BadRequestException('Ya existe un usuario con ese correo en tu negocio');
     }
 
-    const supabaseUrl = this.config.get<string>('SUPABASE_URL')?.trim();
-    const serviceKey = this.config.get<string>('SUPABASE_SERVICE_ROLE_KEY')?.trim();
-    if (!supabaseUrl || !serviceKey) {
-      throw new ServiceUnavailableException(
-        'Invitaci├│n por correo requiere SUPABASE_URL y SUPABASE_SERVICE_ROLE_KEY en el backend.',
-      );
+    const credTaken = await this.credencialPasswordRepo
+      .createQueryBuilder('c')
+      .where('LOWER(c.email) = :email', { email })
+      .getOne();
+    if (credTaken) {
+      throw new ConflictException('Ese correo ya está registrado en el sistema');
     }
 
-    const base =
-      this.config.get<string>('PUBLIC_APP_BASE_URL')?.trim() ||
-      this.config.get<string>('NEST_CORS_ORIGINS')?.split(',')[0]?.trim() ||
-      'http://localhost:3000';
-    const inviteLandingUrl = `${base.replace(/\/$/, '')}/invitacion/completar`;
+    const otherTenant = await this.usuarioRepo
+      .createQueryBuilder('u')
+      .where('LOWER(u.email) = :email', { email })
+      .andWhere('u.deleted_at IS NULL')
+      .getOne();
+    if (otherTenant) {
+      throw new ConflictException('Ese correo ya está registrado en el sistema');
+    }
 
-    const res = await fetch(`${supabaseUrl.replace(/\/$/, '')}/auth/v1/invite`, {
-      method: 'POST',
-      headers: {
-        apikey: serviceKey,
-        Authorization: `Bearer ${serviceKey}`,
-        'Content-Type': 'application/json',
-      },
-      body: JSON.stringify({ email, data: {}, redirect_to: inviteLandingUrl }),
+    const userId = randomUUID();
+    const inviteToken = generateOpaqueToken();
+    const expiresAt = new Date(Date.now() + INVITE_TTL_DAYS * 24 * 60 * 60 * 1000);
+
+    const baseRole = await this.rolRepo.findOne({
+      where: { tenantId, slug: dto.rol, esBase: true },
     });
 
-    const payload = (await res.json().catch(() => ({}))) as {
-      id?: string;
-      user?: { id?: string };
-      msg?: string;
-      message?: string;
-      error_description?: string;
-    };
+    await this.usuarioRepo.save(
+      this.usuarioRepo.create({
+        id: userId,
+        tenantId,
+        email,
+        nombre: dto.nombre.trim(),
+        apellido: dto.apellido.trim(),
+        rol: dto.rol,
+        activo: true,
+        esSuperAdmin: false,
+        sucursalDefaultId: null,
+        pedidosPuedeCrear: false,
+        deletedAt: null,
+        deletedBy: null,
+      }),
+    );
 
-    if (!res.ok) {
-      const msg = payload.msg ?? payload.message ?? payload.error_description ?? 'No se pudo enviar la invitaci├│n';
-      if (msg.toLowerCase().includes('already') || msg.toLowerCase().includes('registered')) {
-        throw new BadRequestException('Ese correo ya est├í registrado en el sistema');
-      }
-      throw new BadRequestException(msg);
+    await this.inviteTokenRepo.save(
+      this.inviteTokenRepo.create({
+        usuarioId: userId,
+        tenantId,
+        tokenHash: hashOpaqueToken(inviteToken),
+        expiresAt,
+        usedAt: null,
+      }),
+    );
+
+    if (baseRole) {
+      await this.usuarioRolRepo.save({ usuarioId: userId, rolId: baseRole.id });
     }
 
-    const userId = payload.id ?? payload.user?.id;
-    if (!userId) {
-      throw new BadRequestException('No se pudo enviar la invitaci├│n');
-    }
-
-    try {
-      await this.usuarioRepo.save(
-        this.usuarioRepo.create({
-          id: userId,
-          tenantId,
-          email,
-          nombre: dto.nombre.trim(),
-          apellido: dto.apellido.trim(),
-          rol: dto.rol,
-          activo: true,
-          esSuperAdmin: false,
-          sucursalDefaultId: null,
-          deletedAt: null,
-          deletedBy: null,
-        }),
-      );
-    } catch (err) {
-      await fetch(`${supabaseUrl.replace(/\/$/, '')}/auth/v1/admin/users/${userId}`, {
-        method: 'DELETE',
-        headers: {
-          apikey: serviceKey,
-          Authorization: `Bearer ${serviceKey}`,
-        },
-      }).catch(() => undefined);
-      throw err;
-    }
-
-    return { success: true, id: userId };
+    return { success: true, id: userId, invite_token: inviteToken };
   }
 
   async patchUser(targetId: string, actorId: string, dto: PatchConfigUserDto) {
@@ -167,13 +177,13 @@ export class ConfigUsersService {
     if (dto.apellido !== undefined) updates.apellido = dto.apellido.trim();
     if (dto.rol !== undefined) {
       if (targetId === actorId && dto.rol !== RolUsuario.admin) {
-        throw new BadRequestException('No pod├®s quitarte el rol de administrador');
+        throw new BadRequestException('No podés quitarte el rol de administrador');
       }
       updates.rol = dto.rol;
     }
     if (dto.activo !== undefined) {
       if (targetId === actorId && dto.activo === false) {
-        throw new BadRequestException('No pod├®s desactivar tu propia cuenta');
+        throw new BadRequestException('No podés desactivar tu propia cuenta');
       }
       updates.activo = dto.activo;
     }
@@ -189,7 +199,7 @@ export class ConfigUsersService {
 
   async deleteUser(targetId: string, actorId: string) {
     if (targetId === actorId) {
-      throw new BadRequestException('No pod├®s eliminar tu propia cuenta');
+      throw new BadRequestException('No podés eliminar tu propia cuenta');
     }
 
     const tenantId = this.tenantContext.getTenantId();

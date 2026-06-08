@@ -128,3 +128,24 @@ export class PosConsumerSalesQueryDto extends ReportPeriodQueryDto {
   @IsString()
   franja?: string;
 }
+
+export class RecibosQueryDto extends ReportPeriodQueryDto {
+  @ApiPropertyOptional({ name: 'cliente_id' })
+  @IsOptional()
+  @IsUUID()
+  cliente_id?: string;
+}
+
+export class ExtractoClienteReportQueryDto extends ReportPeriodQueryDto {
+  @ApiPropertyOptional({ name: 'cliente_id' })
+  @IsOptional()
+  @IsUUID()
+  cliente_id?: string;
+}
+
+export class ExtractoProveedorReportQueryDto extends ReportPeriodQueryDto {
+  @ApiPropertyOptional({ name: 'proveedor_id' })
+  @IsOptional()
+  @IsUUID()
+  proveedor_id?: string;
+}

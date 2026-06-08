@@ -1,6 +1,7 @@
 import {
   BadRequestException,
   ForbiddenException,
+  HttpException,
   Injectable,
   NotFoundException,
 } from '@nestjs/common';
@@ -8,6 +9,9 @@ import { InjectDataSource, InjectRepository } from '@nestjs/typeorm';
 import { DataSource, In, Repository } from 'typeorm';
 
 import { TenantContext } from '../auth/tenant-context.service';
+import type { AccessTokenPayload } from '../auth/interfaces/access-token-payload.interface';
+import { resolveAppRole } from '../auth/utils/resolve-app-role';
+import { SucursalContext } from '../branches/sucursal-context.service';
 import { Sucursal } from '../branches/entities/sucursal.entity';
 import { Cliente } from '../catalog/entities/cliente.entity';
 import { ModuloConfig } from '../config/entities/modulo-config.entity';
@@ -17,14 +21,23 @@ import { Comprobante } from '../facturacion/entities/comprobante.entity';
 import { EstadoComprobante } from '../facturacion/enums/estado-comprobante.enum';
 import { CuentaCorriente } from '../importaciones/entities/cuenta-corriente.entity';
 import { Producto } from '../products/entities/producto.entity';
+import {
+  formatearNumeroComprobante,
+  formatearTipoComprobante,
+} from '../cobranza/utils/comprobante-formato.util';
 import { ExtractoQueryDto } from './dto/extracto-query.dto';
 import { LiquidarItemsDto } from './dto/liquidar-items.dto';
 import { MovimientosDiaQueryDto } from './dto/movimientos-dia-query.dto';
+import { PatchPagoExtractoDto } from './dto/patch-pago-extracto.dto';
 import { PatchClienteCuentaCorrienteDto } from './dto/patch-cliente-cuenta-corriente.dto';
 import { RegistrarPagoDto } from './dto/registrar-pago.dto';
 import { Pago } from './entities/pago.entity';
 import { TipoPago } from './enums/tipo-pago.enum';
 import { readCcDistribuidoraPrefs } from './utils/business-prefs-cc.util';
+import {
+  contarCargosHoyPorCliente,
+  validarComprobanteLiquidable,
+} from './utils/liquidar-comprobante.util';
 import {
   applyCondicionesCuentaPatch,
   CUENTA_CORRIENTE_CONDICIONES_DEFAULTS,
@@ -54,8 +67,9 @@ export class ClienteCuentaCorrienteService {
     @InjectRepository(Producto) private readonly productoRepo: Repository<Producto>,
     @InjectRepository(Sucursal) private readonly sucursalRepo: Repository<Sucursal>,
     @InjectRepository(Tenant) private readonly tenantRepo: Repository<Tenant>,
-    @InjectRepository(ModuloConfig) private readonly moduloRepo: Repository<ModuloConfig>,
+    @InjectRepository(ModuloConfig)     private readonly moduloRepo: Repository<ModuloConfig>,
     private readonly tenantContext: TenantContext,
+    private readonly sucursalContext: SucursalContext,
   ) {}
 
   async getCuenta(clienteId: string) {
@@ -147,8 +161,8 @@ export class ClienteCuentaCorrienteService {
       .andWhere('c.estado IN (:...estados)', {
         estados: [EstadoComprobante.emitido, EstadoComprobante.pendiente_arca],
       })
-      .andWhere(query.sucursalId ? 'c.sucursal_id = :sucursalId' : '1=1', {
-        sucursalId: query.sucursalId,
+      .andWhere(query.sucursal_id ? 'c.sucursal_id = :sucursalId' : '1=1', {
+        sucursalId: query.sucursal_id,
       })
       .orderBy('c.fecha', 'ASC')
       .addOrderBy('c.created_at', 'ASC')
@@ -164,11 +178,11 @@ export class ClienteCuentaCorrienteService {
       .addOrderBy('p.created_at', 'ASC')
       .getMany();
 
-    if (query.sucursalId && pagos.length > 0) {
+    if (query.sucursal_id && pagos.length > 0) {
       const compIds = [...new Set(pagos.map((p) => p.comprobanteId).filter(Boolean))] as string[];
       if (compIds.length > 0) {
         const allowed = await this.comprobanteRepo.find({
-          where: { tenantId, id: In(compIds), sucursalId: query.sucursalId },
+          where: { tenantId, id: In(compIds), sucursalId: query.sucursal_id },
           select: { id: true },
         });
         const allowedSet = new Set(allowed.map((c) => c.id));
@@ -180,7 +194,7 @@ export class ClienteCuentaCorrienteService {
       clienteId,
       clienteNombre: String(cliente.razonSocial || cliente.nombre || 'Cliente'),
       periodo,
-      sucursalId: query.sucursalId ?? null,
+      sucursalId: query.sucursal_id ?? null,
       saldoActual,
       comprobantes: comprobantes.map((c) => ({
         id: c.id,
@@ -218,13 +232,13 @@ export class ClienteCuentaCorrienteService {
   async getMovimientosDia(clienteId: string, query: MovimientosDiaQueryDto) {
     await this.assertFacturadorSimpleOrPos();
     await this.assertCliente(clienteId);
-    if (!query.sucursalId) {
+    if (!query.sucursal_id) {
       throw new BadRequestException('Indic├í la sucursal operativa.');
     }
 
     const tenantId = this.tenantContext.getTenantId();
     const sucursal = await this.sucursalRepo.findOne({
-      where: { id: query.sucursalId, tenantId },
+      where: { id: query.sucursal_id, tenantId },
     });
     if (!sucursal) throw new NotFoundException('Sucursal no encontrada');
 
@@ -240,7 +254,7 @@ export class ClienteCuentaCorrienteService {
       where: {
         tenantId,
         clienteId,
-        sucursalId: query.sucursalId,
+        sucursalId: query.sucursal_id,
         fecha: fechaHoy,
         metodoPago: 'cuenta_corriente',
         estado: In(ESTADOS_MOVIMIENTOS_DIA),
@@ -309,7 +323,7 @@ export class ClienteCuentaCorrienteService {
     return {
       data: {
         fecha: fechaHoy,
-        sucursal_id: query.sucursalId,
+        sucursal_id: query.sucursal_id,
         sucursal_nombre: sucursal.nombre,
         liquidacion_habilitada: prefs.permitirLiquidacionItemsDia,
         saldo_cuenta: saldoCuenta,
@@ -436,6 +450,171 @@ export class ClienteCuentaCorrienteService {
     )) as Array<{ resultado?: Record<string, unknown> }>;
 
     return { data: { resultado: rows[0]?.resultado ?? null } };
+  }
+
+  async getCargosHoy() {
+    await this.assertFacturadorSimpleOrPos();
+    const sucursalId = await this.sucursalContext.requireSucursalId();
+    const tenantId = this.tenantContext.getTenantId();
+    const fechaHoy = hoyEnAR();
+
+    const sucursal = await this.sucursalRepo.findOne({ where: { id: sucursalId, tenantId } });
+    if (!sucursal) throw new NotFoundException('Sucursal no encontrada');
+
+    const prefs = readCcDistribuidoraPrefs(sucursal.businessPrefs);
+    if (!prefs.panelMovimientosDia) {
+      return {
+        fecha: fechaHoy,
+        sucursal_id: sucursalId,
+        habilitado: false,
+        por_cliente: {},
+      };
+    }
+
+    const rows = await this.comprobanteRepo.find({
+      where: {
+        tenantId,
+        sucursalId,
+        fecha: fechaHoy,
+        metodoPago: 'cuenta_corriente',
+        estado: In(ESTADOS_MOVIMIENTOS_DIA),
+      },
+      select: { clienteId: true },
+    });
+
+    const porCliente = contarCargosHoyPorCliente(
+      rows
+        .filter((r) => r.clienteId != null)
+        .map((r) => ({ clienteId: r.clienteId! })),
+    );
+
+    return {
+      fecha: fechaHoy,
+      sucursal_id: sucursalId,
+      habilitado: true,
+      por_cliente: porCliente,
+    };
+  }
+
+  async getLiquidacionComprobante(
+    clienteId: string,
+    comprobanteId: string,
+    query: MovimientosDiaQueryDto,
+  ) {
+    await this.assertFacturadorSimpleOrPos();
+    await this.assertCliente(clienteId);
+    if (!query.sucursal_id) {
+      throw new BadRequestException('Indicá la sucursal operativa.');
+    }
+
+    const tenantId = this.tenantContext.getTenantId();
+    const sucursal = await this.sucursalRepo.findOne({
+      where: { id: query.sucursal_id, tenantId },
+    });
+    if (!sucursal) throw new NotFoundException('Sucursal no encontrada');
+
+    const prefs = readCcDistribuidoraPrefs(sucursal.businessPrefs);
+    if (!prefs.permitirLiquidacionItemsDia) {
+      throw new ForbiddenException(
+        'La liquidación de precios del día no está habilitada en esta sucursal.',
+      );
+    }
+
+    const comp = await this.comprobanteRepo.findOne({ where: { id: comprobanteId, tenantId } });
+    if (!comp || comp.clienteId !== clienteId) {
+      throw new NotFoundException('Comprobante no encontrado.');
+    }
+
+    const val = validarComprobanteLiquidable({
+      fechaHoy: hoyEnAR(),
+      sucursalId: query.sucursal_id,
+      comprobante: {
+        fecha: comp.fecha,
+        metodoPago: comp.metodoPago,
+        estado: comp.estado,
+        tipo: comp.tipo,
+        cae: comp.cae,
+        sucursalId: comp.sucursalId,
+      },
+    });
+    if (!val.ok) {
+      throw new HttpException(val.error, val.status);
+    }
+
+    const compItems = await this.compItemRepo.find({ where: { comprobanteId: comp.id } });
+    const productIds = [...new Set(compItems.map((i) => i.productoId))];
+    const products =
+      productIds.length > 0
+        ? await this.productoRepo.find({ where: { tenantId, id: In(productIds) } })
+        : [];
+    const productMap = new Map(products.map((p) => [p.id, p]));
+    const tenant = await this.tenantRepo.findOne({ where: { id: tenantId } });
+    const pv = tenant?.puntoDeVenta ?? 1;
+
+    const tipoLabel = formatearTipoComprobante(comp.tipo);
+    const numeroLabel = formatearNumeroComprobante(pv, comp.numero);
+
+    return {
+      comprobante_id: comp.id,
+      descripcion: `${tipoLabel} ${numeroLabel}`,
+      total_label: formatCurrencyAr(Number(comp.total)),
+      items: compItems.map((it) => {
+        const p = productMap.get(it.productoId);
+        const sub = Number(it.subtotal);
+        return {
+          id: it.id,
+          nombre: p?.nombre ?? 'Producto',
+          codigo: p?.codigo ?? null,
+          cantidad: Number(it.cantidad),
+          cantidadLabel: String(Number(it.cantidad)),
+          precioUnitario: Number(it.precioUnitario),
+          precioUnitarioLabel: formatCurrencyAr(Number(it.precioUnitario)),
+          subtotal: sub,
+          subtotalLabel: formatCurrencyAr(sub),
+        };
+      }),
+    };
+  }
+
+  async actualizarPagoExtracto(
+    clienteId: string,
+    pagoId: string,
+    dto: PatchPagoExtractoDto,
+    user: AccessTokenPayload,
+  ) {
+    await this.assertFacturadorSimple();
+    if (resolveAppRole(user) === 'visor') {
+      throw new ForbiddenException('Los usuarios visor no pueden editar pagos.');
+    }
+    await this.assertCliente(clienteId);
+    const tenantId = this.tenantContext.getTenantId();
+
+    const pago = await this.pagoRepo.findOne({ where: { id: pagoId, tenantId, clienteId } });
+    if (!pago) throw new NotFoundException('Pago no encontrado');
+
+    const monto = Math.round(Number(dto.monto) * 100) / 100;
+    if (!Number.isFinite(monto) || monto <= 0) {
+      throw new BadRequestException('El monto debe ser mayor a cero.');
+    }
+
+    const rows = (await this.dataSource.query(
+      `SELECT public.actualizar_pago_cliente_extracto(
+        $1::uuid, $2::uuid, $3::numeric, $4::date, $5::public.tipo_pago, $6::text, $7::text
+      ) AS result`,
+      [
+        tenantId,
+        pagoId,
+        monto,
+        dto.fecha,
+        dto.tipo_pago ?? TipoPago.efectivo,
+        dto.referencia ?? null,
+        dto.notas ?? null,
+      ],
+    )) as Array<{ result?: { delta?: unknown } }>;
+
+    const deltaRaw = rows[0]?.result?.delta;
+    const delta = Number(deltaRaw);
+    return { ok: true, delta: Number.isFinite(delta) ? delta : 0 };
   }
 
   private serializeCuenta(c: CuentaCorriente) {

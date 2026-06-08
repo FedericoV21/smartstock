@@ -7,6 +7,7 @@ import { TypeOrmModule } from '@nestjs/typeorm';
 import { AuthModule } from '../auth/auth.module';
 
 import { BranchesModule } from '../branches/branches.module';
+import { UsersModule } from '../users/users.module';
 
 import { Proveedor } from '../catalog/entities/proveedor.entity';
 
@@ -57,6 +58,7 @@ import { ImportacionProductoSnapshot } from './entities/importacion-producto-sna
 
 import { PagoProveedorFactura } from './entities/pago-proveedor-factura.entity';
 
+import { ImportPreflightService } from './import-preflight.service';
 import { ImportacionesController } from './importaciones.controller';
 
 import { ImportacionesService } from './importaciones.service';
@@ -107,6 +109,8 @@ import { ImportacionesService } from './importaciones.service';
 
     BranchesModule,
 
+    UsersModule,
+
   ],
 
   controllers: [
@@ -136,6 +140,8 @@ import { ImportacionesService } from './importaciones.service';
     ImportSupplierObligationService,
 
     ImportLinkableProductsService,
+
+    ImportPreflightService,
 
     ImportConvertPdfService,
 

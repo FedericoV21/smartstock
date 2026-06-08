@@ -26,6 +26,9 @@ export class CerrarTurnoDto {
   gastos_detalle?: string;
 
   @IsOptional()
+  gastos_items?: unknown;
+
+  @IsOptional()
   cierre_automatico_horas?: boolean;
 
   @IsOptional()

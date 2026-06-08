@@ -1,14 +1,4 @@
-import {
-  Body,
-  Controller,
-  Get,
-  Param,
-  ParseUUIDPipe,
-  Patch,
-  Post,
-  Query,
-  Res,
-} from '@nestjs/common';
+import { Body, Controller, Get, Param, ParseUUIDPipe, Patch, Post, Query, Res } from '@nestjs/common';
 import { ApiBearerAuth, ApiOperation, ApiTags } from '@nestjs/swagger';
 import type { Response } from 'express';
 
@@ -19,6 +9,7 @@ import { ClienteCuentaCorrienteService } from './cliente-cuenta-corriente.servic
 import { ExtractoQueryDto } from './dto/extracto-query.dto';
 import { LiquidarItemsDto } from './dto/liquidar-items.dto';
 import { MovimientosDiaQueryDto } from './dto/movimientos-dia-query.dto';
+import { PatchPagoExtractoDto } from './dto/patch-pago-extracto.dto';
 import { PatchClienteCuentaCorrienteDto } from './dto/patch-cliente-cuenta-corriente.dto';
 import { RegistrarPagoDto } from './dto/registrar-pago.dto';
 
@@ -109,5 +100,35 @@ export class ClienteCuentaCorrienteController {
     @CurrentUser() user: AccessTokenPayload,
   ) {
     return this.service.registrarPago(customerId, dto, user.sub);
+  }
+
+  @Get('comprobantes/:comprobanteId/liquidacion')
+  @Roles('admin', 'operador', 'visor')
+  @ApiOperation({
+    summary: 'Ítems liquidables de un comprobante CC del día',
+    description:
+      'Paridad GET /api/clientes/:id/cuenta-corriente/comprobantes/:comprobanteId/liquidacion.',
+  })
+  getLiquidacionComprobante(
+    @Param('customerId', ParseUUIDPipe) customerId: string,
+    @Param('comprobanteId', ParseUUIDPipe) comprobanteId: string,
+    @Query() query: MovimientosDiaQueryDto,
+  ) {
+    return this.service.getLiquidacionComprobante(customerId, comprobanteId, query);
+  }
+
+  @Patch('pagos/:pagoId')
+  @Roles('admin', 'operador')
+  @ApiOperation({
+    summary: 'Actualizar pago desde extracto CC',
+    description: 'Paridad PATCH /api/clientes/:id/cuenta-corriente/pagos/:pagoId.',
+  })
+  actualizarPago(
+    @Param('customerId', ParseUUIDPipe) customerId: string,
+    @Param('pagoId', ParseUUIDPipe) pagoId: string,
+    @Body() dto: PatchPagoExtractoDto,
+    @CurrentUser() user: AccessTokenPayload,
+  ) {
+    return this.service.actualizarPagoExtracto(customerId, pagoId, dto, user);
   }
 }

@@ -1,0 +1,10 @@
+{
+  "functions": {
+    "src/app/api/importar/ejecutar/route.ts": {
+      "maxDuration": 300
+    },
+    "src/app/api/importar/preflight/route.ts": {
+      "maxDuration": 60
+    }
+  }
+}

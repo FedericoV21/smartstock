@@ -38,8 +38,17 @@ export class ModuloConfig {
   @Column({ name: 'ia_precios', type: 'boolean', default: false })
   iaPrecios: boolean;
 
+  @Column({ type: 'boolean', default: false })
+  turnos: boolean;
+
   @Column({ name: 'analizador_rentabilidad', type: 'boolean', default: false })
   analizadorRentabilidad: boolean;
+
+  @Column({ name: 'lector_facturas', type: 'boolean', default: false })
+  lectorFacturas: boolean;
+
+  @Column({ name: 'despiece_carniceria', type: 'boolean', default: true })
+  despieceCarniceria: boolean;
 
   @CreateDateColumn({ name: 'created_at', type: 'timestamptz' })
   createdAt: Date;

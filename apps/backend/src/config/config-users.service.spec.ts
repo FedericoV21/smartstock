@@ -1,5 +1,4 @@
 import { BadRequestException, NotFoundException } from '@nestjs/common';
-import { ConfigService } from '@nestjs/config';
 import { Test, TestingModule } from '@nestjs/testing';
 import { getRepositoryToken } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
@@ -7,6 +6,11 @@ import { Repository } from 'typeorm';
 import { TenantContext } from '../auth/tenant-context.service';
 import { Caja } from '../caja/entities/caja.entity';
 import { CajaUsuario } from '../caja/entities/caja-usuario.entity';
+import { UsuarioCredencialLocal } from '../rbac/entities/usuario-credencial-local.entity';
+import { UsuarioCredencialPassword } from '../rbac/entities/usuario-credencial-password.entity';
+import { UsuarioInviteToken } from '../auth/entities/usuario-invite-token.entity';
+import { Rol } from '../rbac/entities/rol.entity';
+import { UsuarioRol } from '../rbac/entities/usuario-rol.entity';
 import { RolUsuario } from '../users/enums/rol-usuario.enum';
 import { Usuario } from '../users/entities/usuario.entity';
 import { ConfigUsersService } from './config-users.service';
@@ -66,8 +70,32 @@ describe('ConfigUsersService', () => {
           provide: getRepositoryToken(CajaUsuario),
           useValue: { createQueryBuilder: jest.fn().mockReturnValue(cajaQb) },
         },
+        {
+          provide: getRepositoryToken(UsuarioCredencialLocal),
+          useValue: { find: jest.fn().mockResolvedValue([]) },
+        },
+        {
+          provide: getRepositoryToken(UsuarioCredencialPassword),
+          useValue: {
+            createQueryBuilder: jest.fn().mockReturnValue({
+              where: jest.fn().mockReturnThis(),
+              getOne: jest.fn().mockResolvedValue(null),
+            }),
+          },
+        },
+        {
+          provide: getRepositoryToken(UsuarioInviteToken),
+          useValue: { save: jest.fn(), create: jest.fn((d) => d) },
+        },
+        {
+          provide: getRepositoryToken(Rol),
+          useValue: { findOne: jest.fn().mockResolvedValue({ id: 'role-op' }) },
+        },
+        {
+          provide: getRepositoryToken(UsuarioRol),
+          useValue: { save: jest.fn() },
+        },
         { provide: TenantContext, useValue: { getTenantId: () => tenantId } },
-        { provide: ConfigService, useValue: { get: jest.fn().mockReturnValue('') } },
       ],
     }).compile();
 
@@ -108,6 +136,19 @@ describe('ConfigUsersService', () => {
     expect(usuarioRepo.save).toHaveBeenCalledWith(
       expect.objectContaining({ activo: false, deletedBy: adminId }),
     );
+  });
+
+  it('invita usuario sin Supabase y devuelve invite_token', async () => {
+    const result = await service.inviteUser({
+      email: 'nuevo@test.com',
+      nombre: 'Nuevo',
+      apellido: 'User',
+      rol: RolUsuario.operador,
+    });
+
+    expect(result.success).toBe(true);
+    expect(result.id).toEqual(expect.any(String));
+    expect(result.invite_token).toEqual(expect.any(String));
   });
 
   it('404 when deleting unknown user', async () => {

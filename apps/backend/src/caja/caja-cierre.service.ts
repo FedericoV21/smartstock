@@ -1,4 +1,5 @@
 import {
+  BadRequestException,
   ConflictException,
   Injectable,
 } from '@nestjs/common';
@@ -8,6 +9,7 @@ import { Repository } from 'typeorm';
 import { CierreZMedioPago } from './entities/cierre-z-medio-pago.entity';
 import { CierreZ } from './entities/cierre-z.entity';
 import { CajaSnapshotService } from './caja-snapshot.service';
+import { CajaGastosService } from './caja-gastos.service';
 import { CerrarTurnoDto } from './dto/turno.dto';
 import { redondear2 } from './utils/caja-id.util';
 import {
@@ -44,6 +46,7 @@ export class CajaCierreService {
     @InjectRepository(CierreZMedioPago)
     private readonly medioRepo: Repository<CierreZMedioPago>,
     private readonly snapshotService: CajaSnapshotService,
+    private readonly cajaGastosService: CajaGastosService,
   ) {}
 
   async persistCierreZDiarioSesion(params: {
@@ -126,11 +129,23 @@ export class CajaCierreService {
       sesionAperturaId,
     });
 
-    let gastosMonto = 0;
-    const gastosRaw = body.gastos_monto;
-    if (gastosRaw !== null && gastosRaw !== undefined && Number.isFinite(Number(gastosRaw))) {
-      const g = Number(gastosRaw);
-      if (g > 0) gastosMonto = redondear2(g);
+    const gastosResueltos = await this.cajaGastosService.resolverGastosParaCierreDiario(
+      sesionAperturaId,
+      body.gastos_items,
+    );
+    if (!gastosResueltos.ok) {
+      throw new BadRequestException(gastosResueltos.error);
+    }
+
+    let gastosMonto = gastosResueltos.total;
+    const gastosItemsGuardados = gastosResueltos.itemsGuardados;
+
+    if (!gastosItemsGuardados?.length) {
+      const gastosRaw = body.gastos_monto;
+      if (gastosRaw !== null && gastosRaw !== undefined && Number.isFinite(Number(gastosRaw))) {
+        const g = Number(gastosRaw);
+        if (g > 0) gastosMonto = redondear2(g);
+      }
     }
 
     const esperadoSistema = snapshot.efectivo_esperado;
@@ -154,9 +169,13 @@ export class CajaCierreService {
       contadoNum = Number(parsed);
     }
 
-    const gastosDetalle = String(body.gastos_detalle || '')
+    const gastosDetalleLegacy = String(body.gastos_detalle || '')
       .trim()
-      .slice(0, 500) || null;
+      .slice(0, 500);
+    const gastosDetalle =
+      gastosItemsGuardados?.length
+        ? (gastosResueltos.detalle ?? (gastosDetalleLegacy || null))
+        : gastosDetalleLegacy || null;
     const origenUi = String(body.origen_ui || '').trim().slice(0, 48) || null;
 
     const arqueo: ArqueoEfectivoCierre = {
@@ -223,6 +242,10 @@ export class CajaCierreService {
           }),
         ),
       );
+    }
+
+    if (sesionAperturaId) {
+      await this.cajaGastosService.marcarGastosIncluidosEnCierre(sesionAperturaId, cierre.id);
     }
 
     const ticketResumen = {

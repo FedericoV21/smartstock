@@ -73,6 +73,21 @@ export class Tenant {
   @Column({ name: 'ia_ilimitada_origen', type: 'text', nullable: true })
   iaIlimitadaOrigen: 'lector_factura' | 'ia_pdf' | null;
 
+  @Column({ name: 'plan_cambiado_en', type: 'timestamptz', nullable: true })
+  planCambiadoEn: Date | null;
+
+  @Column({ name: 'mensualidad_corte_dia', type: 'smallint', nullable: true })
+  mensualidadCorteDia: number | null;
+
+  @Column({ name: 'ginkgo_monto_abonado', type: 'numeric', precision: 12, scale: 2, nullable: true })
+  ginkgoMontoAbonado: string | null;
+
+  @Column({ name: 'ginkgo_porcentaje', type: 'numeric', precision: 5, scale: 2, nullable: true })
+  ginkgoPorcentaje: string | null;
+
+  @Column({ name: 'ginkgo_facturacion_actualizada_en', type: 'timestamptz', nullable: true })
+  ginkgoFacturacionActualizadaEn: Date | null;
+
   @Column({ type: 'boolean', default: true })
   activo: boolean;
 

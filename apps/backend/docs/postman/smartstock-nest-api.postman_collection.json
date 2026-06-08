@@ -32,6 +32,49 @@
       ]
     },
     {
+      "name": "Admin super-admin",
+      "item": [
+        {
+          "name": "Admin ÔÇö tenants accesibles",
+          "request": { "method": "GET", "url": "{{baseUrl}}/api/v1/admin/tenants-accesibles" }
+        },
+        {
+          "name": "Admin ÔÇö cambiar tenant (impersonar)",
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"tenant_id\": \"00000000-0000-4000-8000-000000000001\"\n}"
+            },
+            "url": "{{baseUrl}}/api/v1/admin/cambiar-tenant"
+          }
+        },
+        {
+          "name": "Admin ÔÇö volver tenant casa",
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"tenant_id\": null\n}"
+            },
+            "url": "{{baseUrl}}/api/v1/admin/cambiar-tenant"
+          }
+        },
+        {
+          "name": "Auth me (con x-tenant-id header)",
+          "request": {
+            "method": "GET",
+            "header": [
+              { "key": "x-tenant-id", "value": "00000000-0000-4000-8000-000000000001" }
+            ],
+            "url": "{{baseUrl}}/api/v1/auth/me"
+          }
+        }
+      ]
+    },
+    {
       "name": "Catalog",
       "item": [
         {
@@ -670,6 +713,39 @@
             "description": "Admin. Cifra access_token con ARCA_ENCRYPTION_KEY."
           }
         },
+        {
+          "name": "Get MP QR config",
+          "request": {
+            "method": "GET",
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/config/mp-qr?sucursal_id={{sucursalId}}",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "v1", "config", "mp-qr"],
+              "query": [{ "key": "sucursal_id", "value": "{{sucursalId}}" }]
+            },
+            "description": "Paridad GET /api/configuracion/mp-qr. Requiere facturador_pos."
+          }
+        },
+        {
+          "name": "Patch MP QR config",
+          "request": {
+            "method": "PATCH",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"habilitado\": true,\n  \"user_id\": \"123456789\",\n  \"external_pos_id\": \"CAJA01\",\n  \"access_token\": \"APP_USR-...\"\n}"
+            },
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/config/mp-qr?sucursal_id={{sucursalId}}",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "v1", "config", "mp-qr"],
+              "query": [{ "key": "sucursal_id", "value": "{{sucursalId}}" }]
+            },
+            "description": "Admin. Cifra access_token con ARCA_ENCRYPTION_KEY."
+          }
+        },
+        {
+          "name": "List payment methods",
           "request": {
             "method": "GET",
             "url": "{{baseUrl}}/api/v1/config/payment-methods",
@@ -720,6 +796,140 @@
             },
             "url": "{{baseUrl}}/api/v1/config/payment-methods/quick",
             "description": "Paridad PUT /api/configuracion/medios-de-pago/rapidos. Solo admin."
+          }
+        },
+        {
+          "name": "List cajas",
+          "request": {
+            "method": "GET",
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/config/cajas?sucursal_id={{sucursalId}}",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "v1", "config", "cajas"],
+              "query": [{ "key": "sucursal_id", "value": "{{sucursalId}}" }]
+            },
+            "description": "Paridad GET /api/configuracion/cajas. NB-CFG-003."
+          }
+        },
+        {
+          "name": "Create caja",
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"sucursal_id\": \"{{sucursalId}}\",\n  \"nombre\": \"Caja demo Postman\",\n  \"numero\": 99\n}"
+            },
+            "url": "{{baseUrl}}/api/v1/config/cajas",
+            "description": "Admin. Paridad POST /api/configuracion/cajas."
+          }
+        },
+        {
+          "name": "Patch caja",
+          "request": {
+            "method": "PATCH",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"nombre\": \"Caja demo (editada)\",\n  \"activa\": true,\n  \"auto_cierre_horas\": 12\n}"
+            },
+            "url": "{{baseUrl}}/api/v1/config/cajas/{{cajaId}}",
+            "description": "Admin. Demo cajaId: c0000001-0001-4001-8001-000000000001"
+          }
+        },
+        {
+          "name": "Delete caja",
+          "request": {
+            "method": "DELETE",
+            "url": "{{baseUrl}}/api/v1/config/cajas/{{cajaId}}",
+            "description": "Admin. Solo si la caja no tiene historial."
+          }
+        },
+        {
+          "name": "Forzar cierre caja",
+          "request": {
+            "method": "POST",
+            "url": "{{baseUrl}}/api/v1/config/cajas/{{cajaId}}/forzar-cierre",
+            "description": "Admin. Cierre administrativo de turno abierto."
+          }
+        },
+        {
+          "name": "Get plan",
+          "request": {
+            "method": "GET",
+            "url": "{{baseUrl}}/api/v1/config/plan",
+            "description": "Paridad GET /api/configuracion/plan."
+          }
+        },
+        {
+          "name": "Activate plan",
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"plan\": \"completo\"\n}"
+            },
+            "url": "{{baseUrl}}/api/v1/config/plan",
+            "description": "Admin. Valores: base | completo."
+          }
+        },
+        {
+          "name": "Get IA ilimitada",
+          "request": {
+            "method": "GET",
+            "url": "{{baseUrl}}/api/v1/config/ia-ilimitada",
+            "description": "Paridad GET /api/configuracion/ia-ilimitada."
+          }
+        },
+        {
+          "name": "Set IA ilimitada origen",
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"ia_ilimitada_origen\": \"lector_factura\"\n}"
+            },
+            "url": "{{baseUrl}}/api/v1/config/ia-ilimitada",
+            "description": "Admin. Valores: lector_factura | ia_pdf."
+          }
+        },
+        {
+          "name": "Get POS prefs",
+          "request": {
+            "method": "GET",
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/config/pos-prefs?for_config=1&sucursal_id={{sucursalId}}",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "v1", "config", "pos-prefs"],
+              "query": [
+                { "key": "for_config", "value": "1" },
+                { "key": "sucursal_id", "value": "{{sucursalId}}" }
+              ]
+            },
+            "description": "Paridad GET /api/configuracion/pos-prefs."
+          }
+        },
+        {
+          "name": "Patch POS prefs (tenant)",
+          "request": {
+            "method": "PATCH",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"scope\": \"tenant\",\n  \"pos_prefs\": {\n    \"mostrarStockEnPos\": true,\n    \"permitirDescuentoManual\": false\n  }\n}"
+            },
+            "url": "{{baseUrl}}/api/v1/config/pos-prefs",
+            "description": "Admin. Paridad PATCH /api/configuracion/pos-prefs."
+          }
+        },
+        {
+          "name": "List balanza sucursales",
+          "request": {
+            "method": "GET",
+            "url": "{{baseUrl}}/api/v1/config/pos-prefs/balanza-sucursales",
+            "description": "Paridad GET /api/configuracion/pos-prefs/balanza-sucursales."
           }
         }
       ]
@@ -1590,6 +1800,209 @@
               "query": [{ "key": "data.id", "value": "{{mpPointIntentId}}" }]
             },
             "description": "Paridad POST /api/pagos/mp-point/webhook. Sin JWT. Valida webhook_secret de mp_point_config. Responde 200 y procesa async."
+          }
+        }
+      ]
+    },
+    {
+      "name": "MP QR pagos",
+      "item": [
+        {
+          "name": "Iniciar cobro QR",
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"comprobante_id\": \"{{comprobanteId}}\",\n  \"total\": 1500\n}"
+            },
+            "url": "{{baseUrl}}/api/v1/pagos/mp-qr/iniciar",
+            "description": "Paridad POST /api/pagos/mp-qr/iniciar. Borrador → pendiente_qr."
+          }
+        },
+        {
+          "name": "Estado cobro MP QR",
+          "request": {
+            "method": "GET",
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/pagos/mp-qr/estado?comprobante_id={{comprobanteId}}",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "v1", "pagos", "mp-qr", "estado"],
+              "query": [{ "key": "comprobante_id", "value": "{{comprobanteId}}" }]
+            }
+          }
+        },
+        {
+          "name": "Sincronizar cobro MP QR",
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"comprobante_id\": \"{{comprobanteId}}\"\n}"
+            },
+            "url": "{{baseUrl}}/api/v1/pagos/mp-qr/sincronizar"
+          }
+        },
+        {
+          "name": "Cancelar cobro QR",
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"comprobante_id\": \"{{comprobanteId}}\"\n}"
+            },
+            "url": "{{baseUrl}}/api/v1/pagos/mp-qr/cancelar"
+          }
+        },
+        {
+          "name": "Verificar config MP QR",
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"user_id\": \"123456789\",\n  \"external_pos_id\": \"CAJA01\",\n  \"access_token\": \"APP_USR-...\"\n}"
+            },
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/pagos/mp-qr/verificar?sucursal_id={{sucursalId}}",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "v1", "pagos", "mp-qr", "verificar"],
+              "query": [{ "key": "sucursal_id", "value": "{{sucursalId}}" }]
+            }
+          }
+        },
+        {
+          "name": "Webhook MP QR (público)",
+          "request": {
+            "auth": { "type": "noauth" },
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"type\": \"merchant_order\",\n  \"data\": { \"id\": \"{{mpQrMerchantOrderId}}\" }\n}"
+            },
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/pagos/mp-qr/webhook?tenant_id={{tenantId}}&sucursal_id={{sucursalId}}&topic=merchant_order",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "v1", "pagos", "mp-qr", "webhook"],
+              "query": [
+                { "key": "tenant_id", "value": "{{tenantId}}" },
+                { "key": "sucursal_id", "value": "{{sucursalId}}" },
+                { "key": "topic", "value": "merchant_order" }
+              ]
+            },
+            "description": "Sin JWT ni x-signature (QR instore). Valida consultando merchant_order en MP."
+          }
+        }
+      ]
+    },
+    {
+      "name": "MP Transferencia pagos",
+      "item": [
+        {
+          "name": "Iniciar verificación Transferencia MP",
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"comprobante_id\": \"{{comprobanteId}}\"\n}"
+            },
+            "url": "{{baseUrl}}/api/v1/pagos/mp-transferencia/iniciar",
+            "description": "Paridad POST /api/pagos/mp-transferencia/iniciar. Requiere transferencia_habilitada en mp_qr_config y caja_id en borrador."
+          }
+        },
+        {
+          "name": "Verificar transferencia MP",
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"comprobante_id\": \"{{comprobanteId}}\"\n}"
+            },
+            "url": "{{baseUrl}}/api/v1/pagos/mp-transferencia/verificar",
+            "description": "Paridad POST /api/pagos/mp-transferencia/verificar. Consulta GET /v1/payments/search en MP."
+          }
+        },
+        {
+          "name": "Confirmar transferencia MP",
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"comprobante_id\": \"{{comprobanteId}}\",\n  \"movimiento_id\": \"{{mpTransferenciaMovimientoId}}\"\n}"
+            },
+            "url": "{{baseUrl}}/api/v1/pagos/mp-transferencia/confirmar"
+          }
+        },
+        {
+          "name": "Cancelar verificación Transferencia MP",
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"comprobante_id\": \"{{comprobanteId}}\"\n}"
+            },
+            "url": "{{baseUrl}}/api/v1/pagos/mp-transferencia/cancelar"
+          }
+        }
+      ]
+    },
+    {
+      "name": "Pasarelas",
+      "item": [
+        {
+          "name": "Listar integraciones",
+          "request": {
+            "method": "GET",
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/pasarelas/integraciones?sucursal_id={{sucursalId}}",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "v1", "pasarelas", "integraciones"],
+              "query": [{ "key": "sucursal_id", "value": "{{sucursalId}}" }]
+            }
+          }
+        },
+        {
+          "name": "Verificar integración",
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": { "mode": "raw", "raw": "{}" },
+            "url": "{{baseUrl}}/api/v1/pasarelas/integraciones/{{pasarelaIntegracionId}}/verificar"
+          }
+        },
+        {
+          "name": "Pasarelas de caja",
+          "request": {
+            "method": "GET",
+            "url": "{{baseUrl}}/api/v1/configuracion/cajas/{{cajaUuid}}/pasarelas?solo_habilitadas=1"
+          }
+        },
+        {
+          "name": "MP QR stores",
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": { "mode": "raw", "raw": "{\n  \"access_token\": \"APP_USR-...\"\n}" },
+            "url": "{{baseUrl}}/api/v1/pasarelas/mp-qr/stores"
+          }
+        },
+        {
+          "name": "MP QR setup",
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"sucursal_id\": \"{{sucursalId}}\",\n  \"access_token\": \"APP_USR-...\",\n  \"store_id\": \"STORE_ID_MP\"\n}"
+            },
+            "url": "{{baseUrl}}/api/v1/pasarelas/mp-qr/setup"
           }
         }
       ]

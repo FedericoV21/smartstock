@@ -1,5 +1,4 @@
 import { ApiPropertyOptional } from '@nestjs/swagger';
-import { Transform } from 'class-transformer';
 import { IsOptional, IsString, IsUUID } from 'class-validator';
 
 export class ExtractoQueryDto {
@@ -18,11 +17,10 @@ export class ExtractoQueryDto {
   @IsString()
   hasta?: string;
 
-  @ApiPropertyOptional()
+  @ApiPropertyOptional({ name: 'sucursal_id' })
   @IsOptional()
   @IsUUID()
-  @Transform(({ value, obj }) => value ?? obj.sucursal_id)
-  sucursalId?: string;
+  sucursal_id?: string;
 
   @ApiPropertyOptional({ description: 'csv para exportar' })
   @IsOptional()

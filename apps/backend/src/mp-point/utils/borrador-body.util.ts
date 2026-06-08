@@ -8,6 +8,8 @@ import { EstadoComprobante } from '../../facturacion/enums/estado-comprobante.en
 const ESTADOS_EMITIBLES: EstadoComprobante[] = [
   EstadoComprobante.borrador,
   EstadoComprobante.pendiente_posnet,
+  EstadoComprobante.pendiente_qr,
+  EstadoComprobante.pendiente_transferencia_mp,
 ];
 
 export async function buildEmitDtoFromBorrador(

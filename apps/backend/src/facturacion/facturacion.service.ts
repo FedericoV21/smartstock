@@ -28,12 +28,15 @@ const MAX_NUMERO_RETRIES = 3;
 const ESTADOS_REEMPLAZABLES_BORRADOR: EstadoComprobante[] = [
   EstadoComprobante.borrador,
   EstadoComprobante.pendiente_posnet,
+  EstadoComprobante.pendiente_qr,
+  EstadoComprobante.pendiente_transferencia_mp,
 ];
 
 export type EmitirComprobanteOpciones = {
   tenantIdOverride?: string;
   reemplazarComprobanteBorradorId?: string;
   mpPointPaymentId?: number;
+  mpQrPaymentId?: number;
 };
 
 export type EmitirDesdeBorradorMpPointResult =
@@ -223,11 +226,59 @@ export class FacturacionService {
     mpPointPaymentId: number;
     dto: EmitComprobanteDto;
   }): Promise<EmitirDesdeBorradorMpPointResult> {
+    return this.emitirDesdeBorradorPasarela({
+      tenantId: params.tenantId,
+      borradorId: params.borradorId,
+      usuarioId: params.usuarioId,
+      dto: params.dto,
+      mpPointPaymentId: params.mpPointPaymentId,
+    });
+  }
+
+  async emitirDesdeBorradorMpQr(params: {
+    tenantId: string;
+    borradorId: string;
+    usuarioId: string;
+    mpQrPaymentId: number;
+    dto: EmitComprobanteDto;
+  }): Promise<EmitirDesdeBorradorMpPointResult> {
+    return this.emitirDesdeBorradorPasarela({
+      tenantId: params.tenantId,
+      borradorId: params.borradorId,
+      usuarioId: params.usuarioId,
+      dto: params.dto,
+      mpQrPaymentId: params.mpQrPaymentId,
+    });
+  }
+
+  async emitirDesdeBorradorMpTransferencia(params: {
+    tenantId: string;
+    borradorId: string;
+    usuarioId: string;
+    dto: EmitComprobanteDto;
+  }): Promise<EmitirDesdeBorradorMpPointResult> {
+    return this.emitirDesdeBorradorPasarela({
+      tenantId: params.tenantId,
+      borradorId: params.borradorId,
+      usuarioId: params.usuarioId,
+      dto: params.dto,
+    });
+  }
+
+  private async emitirDesdeBorradorPasarela(params: {
+    tenantId: string;
+    borradorId: string;
+    usuarioId: string;
+    dto: EmitComprobanteDto;
+    mpPointPaymentId?: number;
+    mpQrPaymentId?: number;
+  }): Promise<EmitirDesdeBorradorMpPointResult> {
     try {
       const data = await this.emitir(params.dto, params.usuarioId, {
         tenantIdOverride: params.tenantId,
         reemplazarComprobanteBorradorId: params.borradorId,
         mpPointPaymentId: params.mpPointPaymentId,
+        mpQrPaymentId: params.mpQrPaymentId,
       });
       return { ok: true, data };
     } catch (err) {
@@ -388,6 +439,13 @@ export class FacturacionService {
               opciones?.mpPointPaymentId != null && opciones.mpPointPaymentId > 0
                 ? String(opciones.mpPointPaymentId)
                 : null,
+            mpQrOrderId: null as string | null,
+            mpQrPaymentId:
+              opciones?.mpQrPaymentId != null && opciones.mpQrPaymentId > 0
+                ? String(opciones.mpQrPaymentId)
+                : null,
+            mpQrPagoHuerfano: false,
+            mpQrCanceladoAt: null as Date | null,
           };
 
           let savedComprobante: Comprobante;

@@ -41,6 +41,6 @@ import { Comprobante } from '../facturacion/entities/comprobante.entity';
     ArcaJobWorkerService,
     ArcaHomologationService,
   ],
-  exports: [ArcaWsfeService, ArcaSolicitarCaeOrchestratorService],
+  exports: [ArcaWsfeService, ArcaSolicitarCaeOrchestratorService, ArcaJobWorkerService],
 })
 export class ArcaModule {}

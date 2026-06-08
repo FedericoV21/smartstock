@@ -26,9 +26,9 @@ export class UsersService {
 
   async ensureFromJwt(user: AccessTokenPayload, tenantId: string): Promise<Usuario> {
     const id = user.sub;
-    let row = await this.usuarioRepo.findOne({ where: { id, tenantId, activo: true } });
-    if (row) {
-      return row;
+    const existing = await this.findActiveById(id);
+    if (existing) {
+      return existing;
     }
 
     const rol = this.mapJwtRole(user);
@@ -38,7 +38,7 @@ export class UsersService {
         : `${id}@smartstock.local`;
     const nombre = email.includes('@') ? email.split('@')[0] : 'Usuario';
 
-    row = await this.usuarioRepo.save(
+    let row = await this.usuarioRepo.save(
       this.usuarioRepo.create({
         id,
         tenantId,
@@ -48,6 +48,7 @@ export class UsersService {
         rol,
         activo: true,
         esSuperAdmin: false,
+        tenantContextoId: null,
         sucursalDefaultId: null,
       }),
     );
@@ -68,7 +69,15 @@ export class UsersService {
     return row;
   }
 
+  async findActiveById(userId: string): Promise<Usuario | null> {
+    return this.usuarioRepo.findOne({ where: { id: userId, activo: true } });
+  }
+
   async getProfile(userId: string, tenantId: string): Promise<Usuario | null> {
+    const byId = await this.findActiveById(userId);
+    if (byId) {
+      return byId;
+    }
     return this.usuarioRepo.findOne({ where: { id: userId, tenantId, activo: true } });
   }
 
@@ -85,7 +94,7 @@ export class UsersService {
   ): Promise<Usuario> {
     await this.assertCanOperateSucursal(userId, tenantId, sucursalId, appRole);
 
-    const row = await this.usuarioRepo.findOne({ where: { id: userId, tenantId, activo: true } });
+    const row = await this.findActiveById(userId);
     if (!row) {
       throw new NotFoundException('Usuario no encontrado en el negocio.');
     }
@@ -112,6 +121,11 @@ export class UsersService {
       return;
     }
 
+    const profile = await this.findActiveById(userId);
+    if (profile?.esSuperAdmin && tenantId !== profile.tenantId) {
+      return;
+    }
+
     const assigned = await this.usuarioSucursalRepo.exist({
       where: { usuarioId: userId, sucursalId },
     });
@@ -119,7 +133,6 @@ export class UsersService {
       return;
     }
 
-    const profile = await this.getProfile(userId, tenantId);
     if (profile?.sucursalDefaultId === sucursalId) {
       return;
     }
@@ -137,7 +150,11 @@ export class UsersService {
     tenantId: string,
     appRole: string | undefined,
   ): Promise<string[]> {
-    if (appRole === 'admin') {
+    const profile = await this.findActiveById(userId);
+    const superAdminInContext =
+      profile?.esSuperAdmin === true && tenantId !== profile.tenantId;
+
+    if (appRole === 'admin' || superAdminInContext) {
       const rows = await this.sucursalRepo.find({
         where: { tenantId, activa: true },
         select: ['id'],
@@ -157,7 +174,6 @@ export class UsersService {
       if (ok) ids.add(link.sucursalId);
     }
 
-    const profile = await this.getProfile(userId, tenantId);
     if (profile?.sucursalDefaultId) {
       const ok = await this.sucursalRepo.exist({
         where: { id: profile.sucursalDefaultId, tenantId, activa: true },
@@ -189,6 +205,7 @@ export class UsersService {
       rol: u.rol,
       activo: u.activo,
       esSuperAdmin: u.esSuperAdmin,
+      tenantContextoId: u.tenantContextoId,
       sucursalDefaultId: u.sucursalDefaultId,
       createdAt: u.createdAt.toISOString(),
       updatedAt: u.updatedAt.toISOString(),

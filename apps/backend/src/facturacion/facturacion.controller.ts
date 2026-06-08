@@ -3,6 +3,8 @@ import {
   Controller,
   Get,
   Header,
+  HttpCode,
+  HttpStatus,
   Param,
   ParseUUIDPipe,
   Post,
@@ -15,6 +17,7 @@ import { CurrentUser } from '../auth/decorators/current-user.decorator';
 import { Roles } from '../auth/decorators/roles.decorator';
 import type { AccessTokenPayload } from '../auth/interfaces/access-token-payload.interface';
 import { ArcaTrayService } from './arca-tray.service';
+import { ComprobanteEncolarArcaService } from './comprobante-encolar-arca.service';
 import { ComprobanteRetryArcaService } from './comprobante-retry-arca.service';
 import { ComprobanteVoidService } from './comprobante-void.service';
 import { ArcaTrayQueryDto } from './dto/arca-tray-query.dto';
@@ -34,6 +37,7 @@ export class FacturacionController {
     private readonly comprobanteVoidService: ComprobanteVoidService,
     private readonly arcaTrayService: ArcaTrayService,
     private readonly comprobanteRetryArcaService: ComprobanteRetryArcaService,
+    private readonly comprobanteEncolarArcaService: ComprobanteEncolarArcaService,
     private readonly compraProveedorManualService: CompraProveedorManualService,
   ) {}
 
@@ -124,6 +128,17 @@ export class FacturacionController {
   })
   retryArca(@Param('id', ParseUUIDPipe) id: string) {
     return this.comprobanteRetryArcaService.retryArca(id);
+  }
+
+  @Post('comprobantes/:id/arca-encolar')
+  @HttpCode(HttpStatus.ACCEPTED)
+  @Roles('admin', 'operador')
+  @ApiOperation({
+    summary: 'Encolar comprobante para autorización ARCA asíncrona',
+    description: 'Paridad POST /api/facturacion/:id/arca-encolar. Crea o reactiva arca_job.',
+  })
+  encolarArca(@Param('id', ParseUUIDPipe) id: string) {
+    return this.comprobanteEncolarArcaService.encolar(id);
   }
 
   @Post('comprobantes/:id/void-without-cae')

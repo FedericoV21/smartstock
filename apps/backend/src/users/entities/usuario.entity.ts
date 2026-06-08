@@ -39,8 +39,17 @@ export class Usuario {
   @Column({ name: 'es_super_admin', type: 'boolean', default: false })
   esSuperAdmin: boolean;
 
+  @Column({ name: 'es_prueba', type: 'boolean', default: false })
+  esPrueba: boolean;
+
+  @Column({ name: 'tenant_contexto_id', type: 'uuid', nullable: true })
+  tenantContextoId: string | null;
+
   @Column({ name: 'sucursal_default_id', type: 'uuid', nullable: true })
   sucursalDefaultId: string | null;
+
+  @Column({ name: 'pedidos_puede_crear', type: 'boolean', default: false })
+  pedidosPuedeCrear: boolean;
 
   @Column({ name: 'deleted_at', type: 'timestamptz', nullable: true })
   deletedAt: Date | null;

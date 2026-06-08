@@ -1,4 +1,4 @@
-import { Injectable, Logger, NotFoundException } from '@nestjs/common';
+import { forwardRef, Inject, Injectable, Logger, NotFoundException } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { In, Repository } from 'typeorm';
 
@@ -42,6 +42,7 @@ export class ArcaSolicitarCaeOrchestratorService {
     @InjectRepository(ArcaConfig)
     private readonly arcaConfigRepo: Repository<ArcaConfig>,
     private readonly numeracion: ArcaNumeracionPreCaeService,
+    @Inject(forwardRef(() => ArcaWsfeService))
     private readonly wsfe: ArcaWsfeService,
     private readonly pdfRegeneration: ComprobantePdfRegenerationService,
   ) {}

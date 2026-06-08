@@ -1,0 +1,76 @@
+name: Backend CI
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [main, develop]
+    paths:
+      - 'apps/backend/**'
+      - '.github/workflows/backend-ci.yml'
+      - 'package-lock.json'
+  pull_request:
+    paths:
+      - 'apps/backend/**'
+      - '.github/workflows/backend-ci.yml'
+      - 'package-lock.json'
+
+jobs:
+  backend:
+    runs-on: ubuntu-latest
+    env:
+      DB_HOST: localhost
+      DB_PORT: '5432'
+      DB_USER: postgres
+      DB_PASSWORD: postgres
+      DB_NAME: smartstock_e2e
+      DB_SSL: 'false'
+      DB_LOGGING: 'false'
+      JWT_SECRET: ci-test-jwt-secret-do-not-use-in-production-32chars
+      ARCA_ENCRYPTION_KEY: '01234567890123456789012345678901'
+      ARCA_WORKER_STUB: 'false'
+      CRON_SECRET: ci-cron-secret
+
+    services:
+      postgres:
+        image: postgres:16-alpine
+        env:
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: postgres
+          POSTGRES_DB: smartstock_e2e
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U postgres -d smartstock_e2e"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+          cache-dependency-path: package-lock.json
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Build backend
+        run: npm run build -w @smartstock/backend
+
+      - name: Run database migrations
+        run: npm run migration:run -w @smartstock/backend
+
+      - name: Seed demo data
+        run: npm run seed:demo -w @smartstock/backend
+
+      - name: Unit tests
+        run: npm run test -w @smartstock/backend
+
+      - name: E2E NB-ARC-106 readiness
+        run: npm run test:e2e:arca -w @smartstock/backend
+
+      - name: E2E smoke (AppModule + Postgres)
+        run: npm run test:e2e -w @smartstock/backend

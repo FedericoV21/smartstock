@@ -71,6 +71,12 @@ export class Producto {
   @Column({ name: 'es_pesable', type: 'boolean', default: false })
   esPesable: boolean;
 
+  @Column({ name: 'es_despiece_padre', type: 'boolean', default: false })
+  esDespiecePadre: boolean;
+
+  @Column({ name: 'es_servicio', type: 'boolean', default: false })
+  esServicio: boolean;
+
   @Column({ name: 'fecha_vencimiento', type: 'date', nullable: true })
   fechaVencimiento: string | null;
 

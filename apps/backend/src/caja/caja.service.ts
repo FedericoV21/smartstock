@@ -15,6 +15,10 @@ import { Sucursal } from '../branches/entities/sucursal.entity';
 import { SucursalContext } from '../branches/sucursal-context.service';
 import { ModuloConfig } from '../config/entities/modulo-config.entity';
 import { hoyEnArgentina } from '../facturacion/utils/fecha-argentina';
+import { Cliente } from '../catalog/entities/cliente.entity';
+import { Comprobante } from '../facturacion/entities/comprobante.entity';
+import { EstadoComprobante } from '../facturacion/enums/estado-comprobante.enum';
+import { Usuario } from '../users/entities/usuario.entity';
 import { UsersService } from '../users/users.service';
 import { CajaCierreService } from './caja-cierre.service';
 import { CajaApertura } from './entities/caja-apertura.entity';
@@ -30,6 +34,11 @@ import {
   normalizarCaja,
   redondear2,
 } from './utils/caja-id.util';
+import {
+  esNotaCredito,
+  tipoIncluido,
+} from './utils/cierre-z-calculo.util';
+import { aplanarRepresentativosVentaPorOrden } from './utils/ventas-representativas-por-orden.util';
 import {
   aperturaEstaCerrada,
   serializeAperturaVigente,
@@ -50,6 +59,12 @@ export class CajaService {
     private readonly cierreRepo: Repository<CierreZ>,
     @InjectRepository(CierreZMedioPago)
     private readonly cierreMedioRepo: Repository<CierreZMedioPago>,
+    @InjectRepository(Comprobante)
+    private readonly comprobanteRepo: Repository<Comprobante>,
+    @InjectRepository(Cliente)
+    private readonly clienteRepo: Repository<Cliente>,
+    @InjectRepository(Usuario)
+    private readonly usuarioRepo: Repository<Usuario>,
     @InjectRepository(Sucursal)
     private readonly sucursalRepo: Repository<Sucursal>,
     @InjectRepository(ModuloConfig)
@@ -298,6 +313,7 @@ export class CajaService {
         sucursalId: caja.sucursalId,
         cajaId: cajaIdText,
         fechaOperativa,
+        openedAt: new Date(),
         fondoEfectivo: String(monto),
         usuarioId: userId,
       }),
@@ -311,6 +327,7 @@ export class CajaService {
           cajaId: caja.id,
           usuarioId: userId,
           estado: 'abierto',
+          abiertoAt: new Date(),
           montoInicial: String(monto),
         }),
       );
@@ -612,6 +629,383 @@ export class CajaService {
     });
 
     return { cierres };
+  }
+
+  /** Cierre administrativo (paridad POST configuracion/cajas/:id/forzar-cierre). */
+  async forzarCierreAdmin(userId: string, cajaUuid: string) {
+    await this.assertFacturadorPos();
+    const tenantId = this.tenantContext.getTenantId();
+
+    const caja = await this.cajaRepo.findOne({ where: { id: cajaUuid, tenantId } });
+    if (!caja) {
+      throw new NotFoundException('Caja no encontrada.');
+    }
+
+    const turno = await this.turnoRepo.findOne({
+      where: { tenantId, cajaId: caja.id, estado: 'abierto' },
+    });
+    if (!turno) {
+      throw new NotFoundException('Esta caja no tiene ningún turno abierto.');
+    }
+
+    const cajaIdText = normalizarCaja(cajaUuidComoCajaIdText(caja.id));
+    const ap = await this.obtenerAperturaVigente(tenantId, cajaIdText, caja.sucursalId);
+    if (!ap) {
+      throw new BadRequestException(
+        'No hay sesión de caja abierta vinculada a este turno. Revisá Cierre de caja o soporte antes de forzar.',
+      );
+    }
+
+    const rangoDesde = ap.opened_at;
+    let rangoHasta = new Date().toISOString();
+    const tDesde = new Date(rangoDesde).getTime();
+    const tHasta = new Date(rangoHasta).getTime();
+    if (Number.isFinite(tDesde) && Number.isFinite(tHasta) && tDesde > tHasta) {
+      rangoHasta = new Date(tDesde + 1000).toISOString();
+    }
+
+    const persisted = await this.cajaCierreService.persistCierreZDiarioSesion({
+      tenantId,
+      userId,
+      sucursalId: caja.sucursalId,
+      cajaIdNormalizada: cajaIdText,
+      sesionAperturaId: ap.id,
+      fechaOperativa: ap.fecha_operativa,
+      rangoDesde,
+      rangoHasta,
+      fondoApertura: ap.fondo_efectivo,
+      modoPeriodo: 'sesion_apertura',
+      body: { origen_ui: 'config_forzar_cierre_admin' },
+      payloadOrigen: 'api/config/cajas/forzar-cierre',
+      usarEfectivoEsperadoComoContado: true,
+    });
+
+    const cerradoAt = new Date();
+    await this.turnoRepo.update(
+      { id: turno.id, estado: 'abierto' },
+      { estado: 'cerrado', cerradoAt, cierreZId: persisted.cierre_id },
+    );
+
+    return {
+      ok: true,
+      cierre_id: persisted.cierre_id,
+      turno_id: turno.id,
+      sucursal_id: caja.sucursalId,
+      snapshot: persisted.snapshot,
+      arqueo_efectivo: persisted.arqueo_efectivo,
+      ticket_resumen: persisted.ticket_resumen,
+    };
+  }
+
+  async listHistorialMovimientos(
+    sucursalIdParam: string | undefined,
+    fechaOperativa: string,
+    cajaIdParam?: string,
+    incluirUltimos = false,
+  ) {
+    await this.assertFacturadorPos();
+    const tenantId = this.tenantContext.getTenantId();
+
+    let sucursalId = sucursalIdParam?.trim() || null;
+    if (!sucursalId) {
+      await this.sucursalContext.resolveSucursalId();
+      sucursalId = this.sucursalContext.getSucursalId();
+    }
+    if (!sucursalId) {
+      throw new BadRequestException('No hay sucursal operativa seleccionada.');
+    }
+
+    const fecha = fechaOperativa.trim();
+    if (!fecha) {
+      throw new BadRequestException('fecha_operativa requerida');
+    }
+
+    const cajaNorm = normalizarCaja(cajaIdParam);
+
+    const aperturas = await this.aperturaRepo.find({
+      where: { tenantId, sucursalId, fechaOperativa: fecha, cajaId: cajaNorm },
+      order: { openedAt: 'DESC' },
+    });
+
+    let cierres = await this.cierreRepo.find({
+      where: { tenantId, sucursalId, fechaOperativa: fecha, cajaId: cajaNorm },
+      order: { createdAt: 'DESC' },
+    });
+
+    const cierresExtendidos: Array<CierreZ & { reciente_fuera_fecha?: boolean }> = [...cierres];
+
+    if (incluirUltimos) {
+      const ultimos = await this.cierreRepo.find({
+        where: { tenantId, sucursalId, cajaId: cajaNorm },
+        order: { createdAt: 'DESC' },
+        take: 6,
+      });
+      const seen = new Set(cierresExtendidos.map((c) => c.id));
+      for (const c of ultimos) {
+        if (seen.has(c.id)) continue;
+        cierresExtendidos.push({
+          ...c,
+          reciente_fuera_fecha: String(c.fechaOperativa) !== fecha,
+        });
+        seen.add(c.id);
+      }
+    }
+
+    const cierreIds = cierresExtendidos.map((c) => c.id);
+    const mediosRows =
+      cierreIds.length > 0
+        ? await this.cierreMedioRepo.find({ where: { cierreZId: In(cierreIds) } })
+        : [];
+    const porCierre = new Map<string, typeof mediosRows>();
+    for (const m of mediosRows) {
+      const arr = porCierre.get(m.cierreZId) ?? [];
+      arr.push(m);
+      porCierre.set(m.cierreZId, arr);
+    }
+
+    type EventoHistorial =
+      | {
+          tipo: 'apertura';
+          id: string;
+          at: string;
+          fondo_efectivo: number;
+          fecha_operativa: string;
+        }
+      | {
+          tipo: 'cierre';
+          id: string;
+          at: string;
+          caja_id: string;
+          fecha_operativa: string;
+          tipo_cierre: string;
+          rango_desde: string;
+          rango_hasta: string;
+          total_comprobantes: number;
+          ventas_netas: number;
+          pagos_cta_cte_total: number;
+          ventas_brutas: number;
+          notas_credito_total: number;
+          reciente_fuera_fecha?: boolean;
+          payload_resumen: Record<string, unknown> | null;
+          medios: { metodo_pago: string; monto_neto: number; cantidad_comprobantes: number }[];
+        };
+
+    const eventos: EventoHistorial[] = [];
+
+    for (const a of aperturas) {
+      eventos.push({
+        tipo: 'apertura',
+        id: a.id,
+        at: a.openedAt.toISOString(),
+        fondo_efectivo: redondear2(Number(a.fondoEfectivo)),
+        fecha_operativa: a.fechaOperativa,
+      });
+    }
+
+    for (const c of cierresExtendidos) {
+      eventos.push({
+        tipo: 'cierre',
+        id: c.id,
+        at: c.createdAt.toISOString(),
+        caja_id: c.cajaId,
+        fecha_operativa: c.fechaOperativa,
+        tipo_cierre: c.tipoCierre,
+        rango_desde: c.rangoDesde.toISOString(),
+        rango_hasta: c.rangoHasta.toISOString(),
+        total_comprobantes: c.totalComprobantes,
+        ventas_netas: Number(c.ventasNetas),
+        pagos_cta_cte_total: Number(c.pagosCtaCteTotal),
+        ventas_brutas: Number(c.ventasBrutas),
+        notas_credito_total: Number(c.notasCreditoTotal),
+        reciente_fuera_fecha: c.reciente_fuera_fecha === true,
+        payload_resumen: c.payloadResumen ?? null,
+        medios: (porCierre.get(c.id) ?? []).map((m) => ({
+          metodo_pago: m.metodoPago,
+          monto_neto: Number(m.montoNeto),
+          cantidad_comprobantes: m.cantidadComprobantes,
+        })),
+      });
+    }
+
+    eventos.sort((x, y) => new Date(y.at).getTime() - new Date(x.at).getTime());
+
+    return { eventos, sucursal_id: sucursalId };
+  }
+
+  async getCierreZResumen(cierreId: string, sucursalIdParam?: string) {
+    await this.assertFacturadorPos();
+    const tenantId = this.tenantContext.getTenantId();
+
+    let sucursalId = sucursalIdParam?.trim() || null;
+    if (!sucursalId) {
+      await this.sucursalContext.resolveSucursalId();
+      sucursalId = this.sucursalContext.getSucursalId();
+    }
+    if (!sucursalId) {
+      throw new BadRequestException('No hay sucursal operativa seleccionada.');
+    }
+
+    const id = cierreId.trim();
+    if (!id) {
+      throw new BadRequestException('cierre_id requerido');
+    }
+
+    const cierre = await this.cierreRepo.findOne({
+      where: { id, tenantId, sucursalId },
+    });
+    if (!cierre) {
+      throw new NotFoundException('Cierre no encontrado.');
+    }
+
+    const mediosRows = await this.cierreMedioRepo.find({
+      where: { tenantId, cierreZId: id },
+    });
+
+    const fechas = this.rangoFechasArgentina(
+      cierre.rangoDesde.toISOString(),
+      cierre.rangoHasta.toISOString(),
+    );
+
+    const qb = this.comprobanteRepo
+      .createQueryBuilder('c')
+      .where('c.tenant_id = :tenantId', { tenantId })
+      .andWhere('c.estado = :estado', { estado: EstadoComprobante.emitido })
+      .andWhere('c.sucursal_id = :sucursalId', { sucursalId })
+      .andWhere('c.created_at >= :desde', { desde: cierre.rangoDesde })
+      .andWhere('c.created_at <= :hasta', { hasta: cierre.rangoHasta });
+
+    if (fechas.desde) {
+      qb.andWhere('c.fecha >= :fechaDesde', { fechaDesde: fechas.desde }).andWhere(
+        'c.fecha <= :fechaHasta',
+        { fechaHasta: fechas.hasta },
+      );
+    }
+
+    if (cierre.cajaId === '__sin_caja__') {
+      qb.andWhere('c.caja_id IS NULL');
+    } else {
+      qb.andWhere('c.caja_id = :cajaId', { cajaId: cierre.cajaId });
+    }
+
+    const comprobantesRows = await qb.orderBy('c.created_at', 'ASC').getMany();
+
+    const clienteIds = [...new Set(comprobantesRows.map((c) => c.clienteId).filter(Boolean))] as string[];
+    const usuarioIds = [...new Set(comprobantesRows.map((c) => c.usuarioId).filter(Boolean))] as string[];
+
+    const [clientes, usuarios] = await Promise.all([
+      clienteIds.length > 0
+        ? this.clienteRepo.find({ where: { id: In(clienteIds) } })
+        : [],
+      usuarioIds.length > 0
+        ? this.usuarioRepo.find({ where: { id: In(usuarioIds) } })
+        : [],
+    ]);
+
+    const clienteMap = new Map(clientes.map((c) => [c.id, c]));
+    const usuarioMap = new Map(usuarios.map((u) => [u.id, u]));
+
+    const rowsConJoins = comprobantesRows
+      .filter((row) => tipoIncluido(String(row.tipo)))
+      .map((row) => ({
+        id: row.id,
+        tipo: String(row.tipo),
+        numero: row.numero,
+        numero_caja: row.numeroCaja,
+        numero_orden: row.numeroOrden,
+        fecha: row.fecha,
+        created_at: row.createdAt.toISOString(),
+        total: Number(row.total),
+        metodo_pago: row.metodoPago,
+        metodo_pago_detalle: row.metodoPagoDetalle,
+        caja_id: row.cajaId,
+        cliente: row.clienteId ? (clienteMap.get(row.clienteId) ?? null) : null,
+        usuario: row.usuarioId ? (usuarioMap.get(row.usuarioId) ?? null) : null,
+      }));
+
+    const representativos = aplanarRepresentativosVentaPorOrden(rowsConJoins);
+
+    const ordenes = representativos.map((row) => {
+      const total = Number(row.total ?? 0);
+      return {
+        id: row.id,
+        numero_orden: row.numero_orden,
+        tipo: row.tipo,
+        numero: row.numero,
+        numero_caja: row.numero_caja,
+        numero_visible: this.numeroVisibleComprobante(row),
+        fecha: row.fecha,
+        created_at: row.created_at,
+        cliente: this.nombreCliente(row.cliente),
+        usuario: this.nombreUsuario(row.usuario),
+        metodo_pago: row.metodo_pago,
+        total: esNotaCredito(row.tipo) ? -Math.abs(total) : total,
+        url_detalle: `/facturacion/${row.id}`,
+      };
+    });
+
+    return {
+      cierre: {
+        id: cierre.id,
+        caja_id: cierre.cajaId,
+        fecha_operativa: cierre.fechaOperativa,
+        tipo_cierre: cierre.tipoCierre,
+        rango_desde: cierre.rangoDesde.toISOString(),
+        rango_hasta: cierre.rangoHasta.toISOString(),
+        total_comprobantes: cierre.totalComprobantes,
+        ventas_brutas: Number(cierre.ventasBrutas),
+        notas_credito_total: Number(cierre.notasCreditoTotal),
+        ventas_netas: Number(cierre.ventasNetas),
+        pagos_cta_cte_total: Number(cierre.pagosCtaCteTotal),
+        created_at: cierre.createdAt.toISOString(),
+        payload_resumen: cierre.payloadResumen ?? null,
+      },
+      medios: mediosRows.map((m) => ({
+        metodo_pago: m.metodoPago,
+        monto_neto: Number(m.montoNeto),
+        cantidad_comprobantes: m.cantidadComprobantes,
+      })),
+      ordenes,
+    };
+  }
+
+  private rangoFechasArgentina(desdeIso: string, hastaIso: string): { desde: string; hasta: string } {
+    const desdeDate = new Date(desdeIso);
+    const hastaDate = new Date(hastaIso);
+    const desde = Number.isFinite(desdeDate.getTime()) ? fechaYmdArgentina(desdeDate) : '';
+    const hasta = Number.isFinite(hastaDate.getTime()) ? fechaYmdArgentina(hastaDate) : desde;
+    return desde <= hasta ? { desde, hasta } : { desde: hasta, hasta: desde };
+  }
+
+  private numeroVisibleComprobante(row: {
+    tipo: string;
+    numero: number | null;
+    numero_caja: number | null;
+    numero_orden: number | null;
+    id: string;
+  }): string {
+    if (row.tipo === 'ticket' && row.numero_caja != null && Number.isFinite(Number(row.numero_caja))) {
+      return String(Number(row.numero_caja)).padStart(8, '0');
+    }
+    if (row.numero != null && Number.isFinite(Number(row.numero))) {
+      return String(Number(row.numero)).padStart(8, '0');
+    }
+    if (row.numero_orden != null && Number.isFinite(Number(row.numero_orden))) {
+      return `Orden #${Number(row.numero_orden)}`;
+    }
+    return row.id.slice(0, 8).toUpperCase();
+  }
+
+  private nombreCliente(cliente: Cliente | null): string {
+    const razon = cliente?.razonSocial?.trim() ?? '';
+    const nombre = cliente?.nombre?.trim() ?? '';
+    return razon || nombre || 'Consumidor final';
+  }
+
+  private nombreUsuario(usuario: Usuario | null): string | null {
+    const nombre = usuario?.nombre?.trim() ?? '';
+    const apellido = usuario?.apellido?.trim() ?? '';
+    const full = `${nombre} ${apellido}`.trim();
+    return full || null;
   }
 
   private async obtenerAperturaVigente(

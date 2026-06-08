@@ -1,7 +1,7 @@
 import { Injectable } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { InjectRepository } from '@nestjs/typeorm';
-import { Repository } from 'typeorm';
+import { In, Repository } from 'typeorm';
 
 import { TenantContext } from '../auth/tenant-context.service';
 import { SucursalContext } from '../branches/sucursal-context.service';
@@ -70,7 +70,17 @@ export class ArcaHomologationService {
       nivel: 'advertencia',
       mensaje: workerSecret.trim()
         ? 'ARCA_WORKER_SECRET configurado (cola async).'
-        : 'ARCA_WORKER_SECRET vac├¡o: el worker POST /internal/arca-jobs/run no estar├í disponible.',
+        : 'ARCA_WORKER_SECRET vacío: el worker POST /internal/arca-jobs/run no estará disponible.',
+    });
+
+    const cronSecret = this.config.get<string>('CRON_SECRET', '');
+    checks.push({
+      id: 'env_cron_secret',
+      ok: Boolean(cronSecret.trim()),
+      nivel: 'advertencia',
+      mensaje: cronSecret.trim()
+        ? 'CRON_SECRET configurado (cron HTTP reintentar-arca / arca-procesar).'
+        : 'CRON_SECRET vacío: los endpoints GET /cron/reintentar-arca y POST /cron/arca-procesar no estarán protegidos.',
     });
 
     const stubEnabled = this.config.get<boolean>('ARCA_WORKER_STUB', false);
@@ -134,8 +144,8 @@ export class ArcaHomologationService {
         nivel: 'bloqueante',
         mensaje:
           cfg.certificadoPem && cfg.clavePrivadaPem
-            ? 'Certificado y clave privada cifrados en BD.'
-            : 'Subir certificadoPem y clavePrivadaPem v├¡a PUT /arca/config.',
+            ? 'Certificado y clave privada cifrados en arca_config (por tenant+sucursal).'
+            : 'El cliente debe subir certificadoPem y clavePrivadaPem vía PUT /arca/config (UI /configuracion/arca).',
       });
 
       const ticketOk = this.isTicketVigente(cfg.ticketExpiracion);
@@ -183,7 +193,7 @@ export class ArcaHomologationService {
         flujo_recomendado: [
           'POST /api/v1/branches/active { sucursalId }',
           'GET /api/v1/arca/homologation-readiness',
-          'PUT /api/v1/arca/config (certificado real homo + sucursalId)',
+          'PUT /api/v1/arca/config { sucursalId, cuitEmisor, puntoDeVenta, ambiente, certificadoPem, clavePrivadaPem } — por cliente/sucursal, cifrado en BD',
           'POST /api/v1/arca/test-connection?sucursalId=...',
           'POST /api/v1/arca/sync-numeracion?sucursalId=...',
           'POST /api/v1/facturacion/comprobantes { tipo fiscal, items } ÔÇö emit v9 con CAE inline',
@@ -192,6 +202,76 @@ export class ArcaHomologationService {
           'GET /api/v1/arca/logs',
         ],
         nota: 'NB-ARC-106 requiere ejecuci├│n manual contra AFIP homo y archivo de evidencia (ver homologacion-arca-e2e.md).',
+      },
+    };
+  }
+
+  async getEvidenceSnapshot() {
+    const tenantId = this.tenantContext.getTenantId();
+    const readiness = await this.getReadiness();
+
+    const comprobantes = await this.comprobanteRepo.find({
+      where: {
+        tenantId,
+        estado: In([
+          EstadoComprobante.pendiente_arca,
+          EstadoComprobante.error_arca,
+          EstadoComprobante.emitido,
+        ]),
+      },
+      order: { createdAt: 'DESC' },
+      take: 10,
+      select: {
+        id: true,
+        tipo: true,
+        numero: true,
+        numeroOrden: true,
+        estado: true,
+        cae: true,
+        caeVencimiento: true,
+        intentosArca: true,
+        ultimoErrorArcaCodigo: true,
+        createdAt: true,
+      },
+    });
+
+    const logs = await this.arcaLogRepo.find({
+      where: { tenantId },
+      order: { createdAt: 'DESC' },
+      take: 20,
+    });
+
+    return {
+      data: {
+        generado_at: new Date().toISOString(),
+        readiness: {
+          listo_para_homologacion: readiness.data.listo_para_homologacion,
+          bloqueantes: readiness.data.bloqueantes,
+          advertencias: readiness.data.advertencias,
+        },
+        comprobantes: comprobantes.map((c) => ({
+          id: c.id,
+          tipo: c.tipo,
+          numero: c.numero,
+          numero_orden: c.numeroOrden,
+          estado: c.estado,
+          cae_ultimos_4: c.cae && c.cae.length >= 4 ? c.cae.slice(-4) : null,
+          cae_vencimiento: c.caeVencimiento,
+          intentos_arca: c.intentosArca,
+          ultimo_error_arca_codigo: c.ultimoErrorArcaCodigo,
+          created_at: c.createdAt.toISOString(),
+        })),
+        logs: logs.map((r) => ({
+          id: r.id,
+          servicio: r.servicio,
+          operacion: r.operacion,
+          exitoso: r.exitoso,
+          error_codigo: r.errorCodigo,
+          comprobante_id: r.comprobanteId,
+          created_at: r.createdAt.toISOString(),
+        })),
+        plantilla_evidencia: 'apps/backend/docs/homologacion-evidencia/TEMPLATE.md',
+        nota: 'Copiar TEMPLATE.md → evidencia-YYYY-MM-DD.md y completar casos 1–5 (sin CAE completos ni certificados).',
       },
     };
   }

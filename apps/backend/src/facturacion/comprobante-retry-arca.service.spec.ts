@@ -103,7 +103,8 @@ describe('ComprobanteRetryArcaService', () => {
       cae: '70123456789012',
       caeVencimiento: '2026-07-01',
       pdfUrl: 'https://cdn.example/pdf.pdf',
-      estado: 'aprobado',
+      estado: EstadoComprobante.emitido,
+      numero: 3,
     });
   });
 

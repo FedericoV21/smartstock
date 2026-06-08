@@ -35,6 +35,15 @@ import { PosModule } from './pos/pos.module';
 import { PresupuestosModule } from './presupuestos/presupuestos.module';
 import { CobranzaModule } from './cobranza/cobranza.module';
 import { MpPointModule } from './mp-point/mp-point.module';
+import { MpQrModule } from './mp-qr/mp-qr.module';
+import { MpTransferenciaModule } from './mp-transferencia/mp-transferencia.module';
+import { PasarelasModule } from './pasarelas/pasarelas.module';
+import { CronModule } from './cron/cron.module';
+import { TurnosModule } from './turnos/turnos.module';
+import { LectorFacturasModule } from './lector-facturas/lector-facturas.module';
+import { DespieceModule } from './despiece/despiece.module';
+import { NexusDashboardModule } from './nexus-dashboard/nexus-dashboard.module';
+import { WhatsappModule } from './whatsapp/whatsapp.module';
 
 @Module({
   imports: [
@@ -81,6 +90,15 @@ import { MpPointModule } from './mp-point/mp-point.module';
     PresupuestosModule,
     CobranzaModule,
     MpPointModule,
+    MpQrModule,
+    MpTransferenciaModule,
+    PasarelasModule,
+    CronModule,
+    TurnosModule,
+    WhatsappModule,
+    LectorFacturasModule,
+    DespieceModule,
+    NexusDashboardModule,
   ],
   providers: [
     { provide: APP_GUARD, useClass: AppThrottlerGuard },

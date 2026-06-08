@@ -7,13 +7,17 @@ import { Roles } from '../auth/decorators/roles.decorator';
 import type { AccessTokenPayload } from '../auth/interfaces/access-token-payload.interface';
 import {
   CustomerDebtQueryDto,
+  ExtractoClienteReportQueryDto,
+  ExtractoProveedorReportQueryDto,
   PosConsumerSalesQueryDto,
+  RecibosQueryDto,
   ReportPeriodQueryDto,
   SalesByProductQueryDto,
   SupplierReplenishmentQueryDto,
   SupplierSpendQueryDto,
 } from './dto/report-period-query.dto';
 import { ReportsAdvancedService } from './reports-advanced.service';
+import { ReportsExtendedService } from './reports-extended.service';
 import { ReportsService } from './reports.service';
 
 @ApiTags('reports')
@@ -23,6 +27,7 @@ export class ReportsController {
   constructor(
     private readonly service: ReportsService,
     private readonly advancedService: ReportsAdvancedService,
+    private readonly extendedService: ReportsExtendedService,
   ) {}
 
   @Get('summary')
@@ -173,6 +178,60 @@ export class ReportsController {
     @Res({ passthrough: true }) res: Response,
   ) {
     const result = await this.advancedService.getCustomerDebt(query);
+    if ('csv' in result) {
+      res.setHeader('Content-Type', 'text/csv; charset=utf-8');
+      res.setHeader('Content-Disposition', `attachment; filename="${result.filename}"`);
+      return result.csv;
+    }
+    return result;
+  }
+
+  @Get('recibos')
+  @Roles('admin', 'operador', 'visor')
+  @ApiOperation({
+    summary: 'Reporte de recibos y cobros',
+    description: 'Paridad GET /api/reportes/recibos.',
+  })
+  async getRecibos(@Query() query: RecibosQueryDto, @Res({ passthrough: true }) res: Response) {
+    const result = await this.extendedService.getRecibos(query);
+    if ('csv' in result) {
+      res.setHeader('Content-Type', 'text/csv; charset=utf-8');
+      res.setHeader('Content-Disposition', `attachment; filename="${result.filename}"`);
+      return result.csv;
+    }
+    return result;
+  }
+
+  @Get('extracto-cuenta-corriente')
+  @Roles('admin', 'operador', 'visor')
+  @ApiOperation({
+    summary: 'Extracto CC por cliente (reporte)',
+    description: 'Paridad GET /api/reportes/extracto-cuenta-corriente. Requiere cliente_id.',
+  })
+  async getExtractoCuentaCorriente(
+    @Query() query: ExtractoClienteReportQueryDto,
+    @Res({ passthrough: true }) res: Response,
+  ) {
+    const result = await this.extendedService.getExtractoCuentaCorriente(query);
+    if ('csv' in result) {
+      res.setHeader('Content-Type', 'text/csv; charset=utf-8');
+      res.setHeader('Content-Disposition', `attachment; filename="${result.filename}"`);
+      return result.csv;
+    }
+    return result;
+  }
+
+  @Get('extracto-cuenta-corriente-proveedor')
+  @Roles('admin', 'operador', 'visor')
+  @ApiOperation({
+    summary: 'Extracto CC por proveedor (reporte)',
+    description: 'Paridad GET /api/reportes/extracto-cuenta-corriente-proveedor. Requiere proveedor_id.',
+  })
+  async getExtractoCuentaCorrienteProveedor(
+    @Query() query: ExtractoProveedorReportQueryDto,
+    @Res({ passthrough: true }) res: Response,
+  ) {
+    const result = await this.extendedService.getExtractoCuentaCorrienteProveedor(query);
     if ('csv' in result) {
       res.setHeader('Content-Type', 'text/csv; charset=utf-8');
       res.setHeader('Content-Disposition', `attachment; filename="${result.filename}"`);

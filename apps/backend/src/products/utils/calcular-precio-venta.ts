@@ -63,6 +63,42 @@ export function calcularPrecioVenta(
   return out;
 }
 
+export type CostoDesdePvpOpts = {
+  descuentoCostoPct?: number | null;
+};
+
+/** Inverso de calcularPrecioVenta: deriva costo desde PVP con IVA y ganancia. */
+export function costoDesdePvpConIvaYGanancia(
+  precioVentaConIva: number,
+  ivaPorcentaje: number | null | undefined,
+  ivaDefault: number = IVA_DEFAULT_PCT,
+  porcentajeGanancia: number | null | undefined = 0,
+  opts?: CostoDesdePvpOpts,
+): number {
+  const venta = Number(precioVentaConIva);
+  if (!Number.isFinite(venta) || venta <= 0) return 0;
+
+  const gananciaRaw = Number(porcentajeGanancia);
+  const ganancia = Number.isFinite(gananciaRaw) ? gananciaRaw : 0;
+  if (ganancia <= -100) return 0;
+
+  const ivaRaw = ivaPorcentaje == null ? NaN : Number(ivaPorcentaje);
+  const iva = Number.isFinite(ivaRaw) ? ivaRaw : ivaDefault;
+  const divisorIva = 1 + iva / 100;
+  const divisorGanancia = 1 + ganancia / 100;
+  if (!(divisorIva > 0) || !(divisorGanancia > 0)) return 0;
+
+  const descuentoRaw = Number(opts?.descuentoCostoPct);
+  const descuento = Number.isFinite(descuentoRaw)
+    ? Math.min(100, Math.max(0, descuentoRaw))
+    : 0;
+  const factorDescuento = 1 - descuento / 100;
+  if (!(factorDescuento > 0)) return 0;
+
+  const costoBase = venta / divisorIva / divisorGanancia;
+  return Math.round((costoBase / factorDescuento) * 100) / 100;
+}
+
 export function margenGananciaSobreCostoSinIva(
   precioCosto: number | null | undefined,
   precioVenta: number | null | undefined,

@@ -125,6 +125,18 @@ export class Comprobante {
   @Column({ name: 'mp_point_payment_id', type: 'bigint', nullable: true })
   mpPointPaymentId: string | null;
 
+  @Column({ name: 'mp_qr_order_id', type: 'text', nullable: true })
+  mpQrOrderId: string | null;
+
+  @Column({ name: 'mp_qr_payment_id', type: 'bigint', nullable: true })
+  mpQrPaymentId: string | null;
+
+  @Column({ name: 'mp_qr_pago_huerfano', type: 'boolean', default: false })
+  mpQrPagoHuerfano: boolean;
+
+  @Column({ name: 'mp_qr_cancelado_at', type: 'timestamptz', nullable: true })
+  mpQrCanceladoAt: Date | null;
+
   @CreateDateColumn({ name: 'created_at', type: 'timestamptz' })
   createdAt: Date;
 

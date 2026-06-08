@@ -89,6 +89,17 @@ export class ArcaController {
     return this.homologationService.getReadiness();
   }
 
+  @Get('homologation-evidence')
+  @Roles('admin')
+  @ApiOperation({
+    summary: 'Snapshot anonimizado para archivo de evidencia NB-ARC-106',
+    description:
+      'Resume readiness, comprobantes recientes (CAE truncado) y logs. No expone certificados ni XML completo.',
+  })
+  getHomologationEvidence() {
+    return this.homologationService.getEvidenceSnapshot();
+  }
+
   @Get('logs')
   @Roles('admin')
   @ApiOperation({

@@ -1,5 +1,6 @@
 import {
   BadRequestException,
+  HttpException,
   Injectable,
   NotFoundException,
   ServiceUnavailableException,
@@ -43,7 +44,28 @@ export class ComprobanteRetryArcaService {
   ) {}
 
   async retryArca(comprobanteId: string) {
-    const tenantId = this.tenantContext.getTenantId();
+    return this.retryArcaForTenant(this.tenantContext.getTenantId(), comprobanteId);
+  }
+
+  async retryArcaForCron(
+    tenantId: string,
+    comprobanteId: string,
+  ): Promise<{ ok: true } | { ok: false; status: number }> {
+    try {
+      await this.retryArcaForTenant(tenantId, comprobanteId);
+      return { ok: true };
+    } catch (err: unknown) {
+      if (err instanceof ServiceUnavailableException) {
+        return { ok: false, status: 503 };
+      }
+      if (err instanceof HttpException) {
+        return { ok: false, status: err.getStatus() };
+      }
+      return { ok: false, status: 500 };
+    }
+  }
+
+  async retryArcaForTenant(tenantId: string, comprobanteId: string) {
     await this.assertFacturadorArcaHabilitado(tenantId);
 
     let comprobante = await this.comprobanteRepo.findOne({
@@ -94,7 +116,8 @@ export class ComprobanteRetryArcaService {
           cae: data.cae,
           caeVencimiento: data.caeVencimiento ?? actualizado?.caeVencimiento ?? null,
           pdfUrl: actualizado?.pdfUrl ?? pdfFromWsfe,
-          estado: 'aprobado' as const,
+          estado: actualizado?.estado ?? EstadoComprobante.emitido,
+          numero: actualizado?.numero ?? null,
         },
       };
     }

@@ -86,6 +86,78 @@ Reglas:
 - Si no hay cruces posibles, devolv├® {"grupos": []}
 - M├íximo 200 grupos`;
 
+export const PROMPT_EXTRACCION_FACTURA = `Analiza esta imagen o PDF de una factura o comprobante fiscal argentino (Factura A/B/C, Nota de Crédito, Nota de Débito, Remito, Ticket).
+
+Devolvé ÚNICAMENTE un JSON válido con el siguiente formato, sin texto adicional:
+
+{
+  "tipo_comprobante": "factura_a" | "factura_b" | "factura_c" | "nota_credito_a" | "nota_credito_b" | "nota_credito_c" | "nota_debito_a" | "nota_debito_b" | "nota_debito_c" | "remito" | "ticket" | "desconocido",
+  "letra": "A" | "B" | "C" | null,
+  "punto_venta": number | null,
+  "numero": number | null,
+  "fecha_emision": "YYYY-MM-DD" | null,
+  "fecha_vencimiento": "YYYY-MM-DD" | null,
+  "emisor": {
+    "razon_social": string | null,
+    "cuit": string | null,
+    "domicilio": string | null,
+    "condicion_iva": "responsable_inscripto" | "monotributista" | "exento" | "consumidor_final" | null,
+    "ingresos_brutos": string | null,
+    "inicio_actividades": "YYYY-MM-DD" | null
+  },
+  "receptor": {
+    "razon_social": string | null,
+    "cuit_dni": string | null,
+    "domicilio": string | null,
+    "condicion_iva": "responsable_inscripto" | "monotributista" | "exento" | "consumidor_final" | null
+  },
+  "items": [
+    {
+      "codigo": string | null,
+      "descripcion": string,
+      "cantidad": number,
+      "unidad": string | null,
+      "precio_unitario": number,
+      "bonificacion": number | null,
+      "subtotal": number
+    }
+  ],
+  "subtotal": number | null,
+  "iva_21": number | null,
+  "iva_10_5": number | null,
+  "iva_27": number | null,
+  "percepcion_iibb": number | null,
+  "percepcion_iva": number | null,
+  "impuesto_interno": number | null,
+  "otros_impuestos": number | null,
+  "total": number | null,
+  "condicion_pago": string | null,
+  "cae": string | null,
+  "cae_vencimiento": "YYYY-MM-DD" | null,
+  "observaciones": string | null
+}
+
+Reglas estrictas:
+- El CUIT debe tener exactamente 11 dígitos sin guiones ni espacios.
+- Los montos deben ser números (sin "$", sin separadores de miles, punto como decimal).
+- Si el comprobante es de tipo B o C, "subtotal" y "total" son iguales y "iva_*" debe ir en null (IVA está incluido).
+- Si no encontrás un campo, usá null (no inventes datos).
+- "tipo_comprobante" se deduce de la letra impresa (A/B/C) y de la denominación arriba a la derecha.
+- Para items, respetá la descripción original del comprobante.
+- Si hay descuentos o bonificaciones por línea, restalos del subtotal del item.
+- No incluyas renglones de totales, impuestos ni leyendas en el array de items.
+- Si el documento no parece una factura, devolvé {"tipo_comprobante": "desconocido", "items": []}.`;
+
+export const PROMPT_EXTRACCION_FACTURA_REINTENTO_TABLA = `${PROMPT_EXTRACCION_FACTURA}
+
+ATENCIÓN — REINTENTO DE TABLA:
+- La lectura anterior de la tabla de ítems NO cuadra con el subtotal o total impreso.
+- Releé CUIDADOSAMENTE cada renglón de la tabla: cantidad, precio unitario, bonificación y subtotal por línea.
+- Verificá que la suma de subtotales de items coincida con el subtotal o total visible en el comprobante.
+- No omitas líneas de productos ni dupliques renglones de totales, impuestos o leyendas.
+- Si una columna no es legible, estimá con coherencia numérica respecto al total impreso.
+- Priorizá precisión en cantidades y precios unitarios sobre velocidad.`;
+
 export const PROMPT_REPORTE_EJECUTIVO = `Sos un analista comercial que trabaja para una PyME argentina.
 Te paso los datos de una lista de precios ya analizada. Gener├í un reporte ejecutivo breve y accionable.
 
